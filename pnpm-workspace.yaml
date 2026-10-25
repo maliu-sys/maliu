@@ -1,0 +1,4 @@
+# Installation needs no dependency lifecycle scripts; the resolver ships prebuilt binaries.
+saveExact: true
+allowBuilds:
+  unrs-resolver: false

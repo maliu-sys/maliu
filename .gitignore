@@ -1,0 +1,17 @@
+node_modules/
+.expo/
+dist/
+coverage/
+android/
+ios/
+!modules/**/android/
+modules/**/android/build/
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.apk
+*.aab
+.DS_Store
+*.tsbuildinfo
