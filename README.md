@@ -12,8 +12,27 @@
 </p>
 </div>
 
-## Features
+## Install
 
-- **Lives in your context:** Connect time, place, and everyday activity for help that’s personal, responsive, and proactive.
-- **More than one way to get things done:** Take the right path with native app APIs, accessibility, RelayAgent delegation, record-and-replay, and vision-based interaction.
-- **Made to be remade:** Open and extensible, with a plugin marketplace, controlled execution, and rich logs.
+Requires Node **26.10.0**, JDK **17**, and an Android SDK with a `maliu` AVD.
+
+```shell
+npx --yes pnpm@12.15.0 install --frozen-lockfile
+```
+
+Copy `.env.example` to `.env.local` and fill in your development API key.
+
+## Run
+
+Run from the project directory. Homebrew tools are located automatically on macOS.
+
+```shell
+# Terminal 1: start the emulator
+npm run emulator
+
+# Terminal 2: build, install, and start Metro (first run / native changes)
+npm run android
+
+# Later TS/JS development: start Metro instead; press a to open Android
+npm start
+```
