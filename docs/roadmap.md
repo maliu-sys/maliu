@@ -13,7 +13,7 @@
 - [ ] Location Record & Analysis
 - [ ] Scrapper & Publisher
 
-## Machinism
+## Machinisms
 
 - [ ] Relay Agent: refer to https://github.com/ShadowNearby/RelayAgent
 - [ ] Jev: for router, for operations.
@@ -26,3 +26,4 @@
 - [ ] skills for issue and PR
 - [ ] CI for release
 - [ ] Benchmark
+- [ ] AI Dev Support, such as `agent.md`
