@@ -12,6 +12,12 @@
 </p>
 </div>
 
+## Features
+
+- **Lives in your context:** Connect time, place, and everyday activity for help that’s personal, responsive, and proactive.
+- **More than one way to get things done:** Take the right path with native app APIs, accessibility, RelayAgent delegation, record-and-replay, and vision-based interaction.
+- **Made to be remade:** Open and extensible, with a plugin marketplace, controlled execution, and rich logs.
+
 ## Install
 
 Requires Node **26.10.0**, JDK **17**, and an Android SDK with a `maliu` AVD.
