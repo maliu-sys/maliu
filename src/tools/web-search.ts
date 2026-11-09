@@ -1,7 +1,7 @@
 import { fetch } from 'expo/fetch';
-import type { Tool } from '../agent/types';
+import type { ToolDefinition } from '../agent/types';
 
-export const webSearch: Tool = {
+export const webSearch: ToolDefinition = {
   name: 'web_search',
   description:
     'Search the web for current information. Returns titles, source URLs and excerpts. Cite the URLs in your answer.',

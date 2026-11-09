@@ -12,6 +12,7 @@
 - [ ] Semantic File/Picture/Video Search
 - [ ] Location Record & Analysis
 - [ ] Scrapper & Publisher
+- [ ] Android Services
 
 ## Machinisms
 
@@ -27,3 +28,4 @@
 - [ ] CI for release
 - [ ] Benchmark
 - [ ] AI Dev Support, such as `agent.md`
+- [ ] Real-World development

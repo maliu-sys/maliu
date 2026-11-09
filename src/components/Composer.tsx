@@ -1,24 +1,26 @@
-import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTheme } from './theme';
 
 export function Composer({
   busy,
   enabled,
+  text,
+  onChangeText,
   onSend,
   onStop,
 }: {
   busy: boolean;
   enabled: boolean;
+  text: string;
+  onChangeText: (text: string) => void;
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
   const theme = useTheme();
-  const [text, setText] = useState('');
   const send = () => {
     if (!enabled || busy || !text.trim()) return;
     onSend(text.trim());
-    setText('');
+    onChangeText('');
   };
   return (
     <View style={[styles.row, { borderTopColor: theme.border }]}>
@@ -29,7 +31,7 @@ export function Composer({
         }
         placeholderTextColor={theme.muted}
         value={text}
-        onChangeText={setText}
+        onChangeText={onChangeText}
         multiline
         maxLength={16000}
         editable={enabled && !busy}

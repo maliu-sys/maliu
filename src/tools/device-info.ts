@@ -1,8 +1,8 @@
-import { getDeviceInfo } from '../../modules/device-info/src';
-import type { Tool } from '../agent/types';
+import { getDeviceInfo } from '../../modules/device-info/src/index';
+import type { ToolDefinition } from '../agent/types';
 import { throwIfAborted } from '../agent/timeout';
 
-export const deviceInfo: Tool = {
+export const deviceInfo: ToolDefinition = {
   name: 'get_device_info',
   description:
     'Read this Android device manufacturer, model, Android version, API level and supported CPU architectures.',

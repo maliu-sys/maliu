@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ChatScreen } from './src/screens/ChatScreen';
+import { MainScreen } from './src/screens/MainScreen';
 import { loadConversation } from './src/storage/conversations';
 import { loadModelSettings } from './src/storage/settings';
 import { useTheme } from './src/components/theme';
@@ -14,6 +14,7 @@ import {
 
 export default function App() {
   const theme = useTheme();
+  // init conversation and model settings
   const [initial, setInitial] = useState<{
     conversation: Conversation;
     settings: ModelSettings;
@@ -31,7 +32,7 @@ export default function App() {
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
         <StatusBar style="auto" />
         {initial ? (
-          <ChatScreen
+          <MainScreen
             initialConversation={initial.conversation}
             initialSettings={initial.settings}
           />

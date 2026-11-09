@@ -1,12 +1,14 @@
-import { streamCompletion } from '../model/openai-compatible';
+import { streamModelCall } from '../model/openai-compatible';
 import {
   errorMessage,
   newId,
   type Message,
   type ModelSettings,
   type Tool,
+  type ModelCall,
 } from './types';
 import { throwIfAborted, withTimeout } from './timeout';
+import { startSpan, tracedModelCall, type TraceContext } from './trace';
 
 // Close outstanding calls after an interrupted run; never replay a device action.
 export function closePendingTools(messages: Message[]): Message[] {
@@ -26,6 +28,7 @@ export function closePendingTools(messages: Message[]): Message[] {
         .filter((call) => !results.has(call.id))
         .map((call): Message => ({
           id: newId(),
+          createdAt: Date.now(),
           role: 'tool',
           content: JSON.stringify({
             error:
@@ -48,6 +51,10 @@ export async function runAgent({
   onMessages,
   onStatus,
   checkpoint,
+  systemPrompt,
+  onUsage,
+  complete = streamModelCall,
+  trace,
 }: {
   history: Message[];
   prompt: string;
@@ -57,10 +64,18 @@ export async function runAgent({
   onMessages: (messages: Message[]) => void;
   onStatus: (status: string) => void;
   checkpoint: (messages: Message[]) => Promise<void>;
+  systemPrompt: string;
+  complete?: ModelCall;
+  trace?: TraceContext;
+  onUsage?: (usage: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  }) => void;
 }): Promise<void> {
+  const callModel = tracedModelCall(complete, trace);
   let messages: Message[] = [
     ...closePendingTools(history),
-    { id: newId(), role: 'user', content: prompt },
+    { id: newId(), createdAt: Date.now(), role: 'user', content: prompt },
   ];
   let draft: Message | undefined;
   const publish = async () => {
@@ -73,31 +88,39 @@ export async function runAgent({
       throwIfAborted(signal);
       onStatus('Thinking…');
       const draftId = newId();
-      draft = { id: draftId, role: 'assistant', content: '' };
+      const createdAt = Date.now();
+      draft = { id: draftId, createdAt, role: 'assistant', content: '' };
       const answer = await withTimeout(signal, 120_000, (requestSignal) =>
-        streamCompletion({
+        callModel({
           settings,
           messages,
           tools,
+          systemPrompt,
+          onUsage,
           signal: requestSignal,
           onText: (content) => {
             if (signal.aborted || requestSignal.aborted) return;
-            draft = { id: draftId, role: 'assistant', content };
+            draft = { id: draftId, createdAt, role: 'assistant', content };
             onStatus('Responding…');
             onMessages([...messages, draft]);
           },
         }),
       );
       throwIfAborted(signal);
-      messages = [...messages, { id: draftId, role: 'assistant', ...answer }];
+      messages = [
+        ...messages,
+        { id: draftId, createdAt, role: 'assistant', ...answer },
+      ];
       draft = undefined;
       await publish();
+      throwIfAborted(signal);
       if (!answer.tool_calls?.length) return;
       for (const call of answer.tool_calls) {
         throwIfAborted(signal);
         onStatus(`Running ${call.function.name}…`);
         let content: string;
         let isError = false;
+        const toolSpan = startSpan(trace, 'tool', call.function.name);
         try {
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
@@ -107,15 +130,20 @@ export async function runAgent({
           );
           content = JSON.stringify(output) ?? 'null';
         } catch (error) {
+          isError = true;
           throwIfAborted(signal);
           content = JSON.stringify({ error: errorMessage(error) });
-          isError = true;
+        } finally {
+          toolSpan.emit('end', {
+            status: signal.aborted ? 'cancelled' : isError ? 'error' : 'ok',
+          });
         }
         throwIfAborted(signal);
         messages = [
           ...messages,
           {
             id: newId(),
+            createdAt: Date.now(),
             role: 'tool',
             tool_call_id: call.id,
             toolName: call.function.name,

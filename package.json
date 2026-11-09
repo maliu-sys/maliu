@@ -13,6 +13,8 @@
     "android": "node scripts/dev.mjs build",
     "android:release": "node scripts/dev.mjs build --variant release",
     "prebuild": "expo prebuild --platform android",
+    "eval": "node eval/run.mjs",
+    "test": "node --test eval/framework.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

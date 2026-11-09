@@ -6,6 +6,7 @@ export type ToolCall = {
 
 export type Message = {
   id: string;
+  createdAt?: number;
   role: 'user' | 'assistant' | 'tool';
   content: string;
   reasoning_content?: string;
@@ -22,10 +23,40 @@ export type Tool = {
   execute: (args: unknown, signal: AbortSignal) => Promise<unknown>;
 };
 
+export type ToolContext = {
+  conversationId: string;
+  // Resolved at execution, after the current user message has been persisted.
+  currentUser: () => Message;
+};
+
+export type ToolDefinition = Omit<Tool, 'execute'> & {
+  execute: (
+    args: unknown,
+    signal: AbortSignal,
+    context: ToolContext,
+  ) => Promise<unknown>;
+};
+
 export type ModelSettings = {
   baseUrl: string;
   model: string;
   apiKey: string;
+};
+
+export type Usage = { prompt_tokens?: number; completion_tokens?: number };
+export type ModelCallOptions = {
+  settings: ModelSettings;
+  messages: Message[];
+  tools: Tool[];
+  signal: AbortSignal;
+  onText: (content: string) => void;
+  onUsage?: (usage: Usage) => void;
+  systemPrompt: string;
+};
+export type ModelCall = ((
+  options: ModelCallOptions,
+) => Promise<Pick<Message, 'content' | 'reasoning_content' | 'tool_calls'>>) & {
+  mode?: 'live' | 'scripted';
 };
 
 export type Conversation = {

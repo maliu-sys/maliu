@@ -2,6 +2,7 @@ node_modules/
 .expo/
 dist/
 coverage/
+eval/results/
 android/
 ios/
 !modules/**/android/
