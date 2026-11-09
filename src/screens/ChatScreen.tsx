@@ -2,13 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   AppState,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { runAgent } from '../agent/loop';
 import {
   errorMessage,
@@ -31,6 +35,7 @@ export function ChatScreen({
   initialSettings: ModelSettings;
 }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState(initialSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState(initialConversation.messages);
@@ -156,7 +161,11 @@ export function ChatScreen({
       ],
     );
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior="height"
+      keyboardVerticalOffset={insets.top}
+    >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.text }]}>MaLiu</Text>
@@ -228,7 +237,7 @@ export function ChatScreen({
           )}
         </SafeAreaView>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

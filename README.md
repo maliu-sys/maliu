@@ -42,3 +42,7 @@ npm run android
 # Later TS/JS development: start Metro instead; press a to open Android
 npm start
 ```
+
+To type with your computer keyboard, enable **Hardware keyboard** in the
+`maliu` AVD settings (`hw.keyboard=yes` in its `config.ini`), then cold boot
+the emulator.
