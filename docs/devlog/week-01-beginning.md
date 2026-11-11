@@ -12,7 +12,7 @@
 
 ## React
 
-又补充了一波 React 的基础知识，这是真的一点也不会啊。记录在了
+又补充了一波 React 的基础知识，这是真的一点也不会啊。记录在了 [这里](https://thysrael.github.io/obsidian-quartz/React) 。
 
 了解过后感觉 DSH 的那一套理论，也没有那么石破天惊了。可能像前端这种复杂场景，早就需要用函数式，effect 等形式化的表述了。
 
