@@ -1,5 +1,6 @@
 import './register.mjs';
 import { fork, execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import process from 'node:process';
@@ -103,6 +104,7 @@ const paths = execFileSync(
 )
   .trim()
   .split('\n')
+  .filter(existsSync)
   .sort();
 for (const path of paths) source.update(path).update(await readFile(path));
 const results = [],

@@ -1,15 +1,11 @@
 import assert from 'node:assert/strict';
 import { cases, scoreAnswer } from '../cases/memory.mjs';
 import { call, reply, savedHistory, scripted, turn } from '../helpers.mjs';
-import {
-  editMemory,
-  listMemories,
-  loadPreferenceContext,
-} from '../../src/memory/store.ts';
-import { recentHistory } from '../../src/memory/context.ts';
+import { editMemory, listMemories } from '../../src/memory/store.ts';
+import { recentHistory } from '../../src/agent/turn.ts';
 import { searchMemory } from '../../src/memory/search.ts';
-import { memoryTools } from '../../src/memory/tools.ts';
-import { createTools } from '../../src/tools/index.ts';
+import { memoryTools } from '../../src/tools/memory.ts';
+import { bindToolContext } from '../../src/tools/index.ts';
 import {
   deleteConversation,
   loadConversation,
@@ -61,10 +57,11 @@ export const memory = [
           (m) => m.toolName === 'memory_upsert' && !m.isError,
         ),
       );
-      const preferences = await loadPreferenceContext();
       ctx.check(
-        'preference available to next turn',
-        preferences.includes('concise'),
+        'saved preference is searchable',
+        (await searchMemory('concise', 'atomic')).some(
+          (hit) => hit.value === 'Prefers concise replies.',
+        ),
       );
       ctx.check(
         'fresh database needs no extraction queue',
@@ -87,17 +84,34 @@ export const memory = [
         await turn(ctx, {
           useMemory: variant === 'actual',
           context: variant === 'oracle' ? 'Oracle context only.' : undefined,
-          complete: scripted(({ systemPrompt, tools }) => {
-            ctx.check(
-              `${variant} gets the intended tools and context`,
-              tools.some((tool) => tool.name === 'memory_search') ===
-                (variant === 'actual') &&
-                systemPrompt.includes(preference) === (variant === 'actual') &&
-                systemPrompt.includes('Oracle context only.') ===
-                  (variant === 'oracle'),
-            );
-            return reply('Hello.');
-          }),
+          complete: scripted(
+            ({ systemPrompt, tools }) => {
+              ctx.check(
+                `${variant} gets the intended tools without automatic preference injection`,
+                tools.some((tool) => tool.name === 'memory_search') ===
+                  (variant === 'actual') &&
+                  !systemPrompt.includes(preference) &&
+                  systemPrompt.includes('Oracle context only.') ===
+                    (variant === 'oracle'),
+              );
+              return variant === 'actual'
+                ? call('memory_search', { query: 'concise', scope: 'atomic' })
+                : reply('Hello.');
+            },
+            ...(variant === 'actual'
+              ? [
+                  ({ messages }) => {
+                    ctx.check(
+                      'preference reaches the model through search',
+                      JSON.parse(messages.at(-1).content).hits.some(
+                        (hit) => hit.value === preference,
+                      ),
+                    );
+                    return reply('Hello.');
+                  },
+                ]
+              : []),
+          ),
         });
       }
     },
@@ -108,7 +122,7 @@ export const memory = [
     modes: ['scripted'],
     async run(ctx) {
       const original = await savedHistory('I live in Shanghai.');
-      await createTools(
+      await bindToolContext(
         {
           conversationId: original.id,
           currentUser: () => original.messages[0],
@@ -123,7 +137,7 @@ export const memory = [
         ctx.signal,
       );
       const updated = await savedHistory('I now live in Shenzhen.');
-      await createTools(
+      await bindToolContext(
         {
           conversationId: updated.id,
           currentUser: () => updated.messages[0],
@@ -154,7 +168,7 @@ export const memory = [
           (await searchMemory('Shenzhen', 'conversations')).length > 0,
       );
       const fresh = await savedHistory('I live in Suzhou now.');
-      const [, upsert] = createTools(
+      const [, upsert] = bindToolContext(
         {
           conversationId: fresh.id,
           currentUser: () => fresh.messages[0],
@@ -208,7 +222,7 @@ export const memory = [
     modes: ['scripted'],
     async run(ctx) {
       const conversation = await savedHistory('I live in Tianjin.');
-      const [, upsert] = createTools(
+      const [, upsert] = bindToolContext(
         {
           conversationId: conversation.id,
           currentUser: () => conversation.messages[0],
@@ -235,7 +249,7 @@ export const memory = [
       };
       conversation.messages.push(current);
       await saveConversation(conversation);
-      const [search, currentUpsert] = createTools(
+      const [search, currentUpsert] = bindToolContext(
         {
           conversationId: conversation.id,
           currentUser: () => current,
@@ -282,9 +296,12 @@ export const memory = [
         { id: 'a', role: 'assistant', ...call('x', {}, 't') },
         { id: 'r', role: 'tool', content: 'done', tool_call_id: 't' },
       ];
+      const budget = grouped
+        .slice(-3)
+        .reduce((total, message) => total + JSON.stringify(message).length, 0);
       ctx.check(
         'whole tool groups kept',
-        recentHistory(grouped, 24000, 1)
+        recentHistory(grouped, budget)
           .map((m) => m.id)
           .join(',') === 'u,a,r',
       );

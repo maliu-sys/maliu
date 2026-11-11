@@ -52,25 +52,20 @@ export async function runAgent({
   onStatus,
   checkpoint,
   systemPrompt,
-  onUsage,
   complete = streamModelCall,
   trace,
 }: {
   history: Message[];
-  prompt: string;
+  prompt: string; // current input
   settings: ModelSettings;
   tools: Tool[];
   signal: AbortSignal;
   onMessages: (messages: Message[]) => void;
   onStatus: (status: string) => void;
-  checkpoint: (messages: Message[]) => Promise<void>;
+  checkpoint: (messages: Message[]) => Promise<void>; // save to sql
   systemPrompt: string;
   complete?: ModelCall;
   trace?: TraceContext;
-  onUsage?: (usage: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-  }) => void;
 }): Promise<void> {
   const callModel = tracedModelCall(complete, trace);
   let messages: Message[] = [
@@ -85,6 +80,7 @@ export async function runAgent({
   try {
     await publish();
     for (let turn = 0; turn < 8; turn++) {
+      // call the model API
       throwIfAborted(signal);
       onStatus('Thinking…');
       const draftId = newId();
@@ -96,7 +92,6 @@ export async function runAgent({
           messages,
           tools,
           systemPrompt,
-          onUsage,
           signal: requestSignal,
           onText: (content) => {
             if (signal.aborted || requestSignal.aborted) return;
@@ -112,9 +107,15 @@ export async function runAgent({
         { id: draftId, createdAt, role: 'assistant', ...answer },
       ];
       draft = undefined;
+
+      // publish the results to ChatScreen
       await publish();
       throwIfAborted(signal);
+
+      // no tool calls means the task is finished, then break.
       if (!answer.tool_calls?.length) return;
+
+      // processing the tool calls
       for (const call of answer.tool_calls) {
         throwIfAborted(signal);
         onStatus(`Running ${call.function.name}…`);
@@ -125,7 +126,7 @@ export async function runAgent({
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
           const args: unknown = JSON.parse(call.function.arguments);
-          const output = await withTimeout(signal, 30_000, (toolSignal) =>
+          const output = await withTimeout(signal, 30_000, (toolSignal) => // wait most 30s
             tool.execute(args, toolSignal),
           );
           content = JSON.stringify(output) ?? 'null';

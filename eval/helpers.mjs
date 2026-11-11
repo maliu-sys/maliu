@@ -3,7 +3,7 @@ import {
   saveConversation,
 } from '../src/storage/conversations.ts';
 import { runTurn } from '../src/agent/turn.ts';
-import { memoryTools } from '../src/memory/tools.ts';
+import { memoryTools } from '../src/tools/memory.ts';
 
 export const signal = () => new AbortController().signal;
 export const reply = (content) => ({ content });
@@ -41,7 +41,7 @@ export function turn(
     conversation: emptyConversation(),
     prompt: 'Hello',
     tools: useMemory ? [...tools, ...memoryTools] : tools,
-    context: context ?? (useMemory ? undefined : ''),
+    context,
     signal: ctx.signal,
     settings: ctx.settings,
     trace: ctx.trace,

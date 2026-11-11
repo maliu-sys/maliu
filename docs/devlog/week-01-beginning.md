@@ -1,10 +1,8 @@
 # The Begining of Maliu
 
-## Summary
+## Architecture
 
-我 Vibe 了项目的基础架构。采用的是 `react-native` + `expo` 的软件栈。目前有一个基础的 agent loop 。
-
-前路险阻呀，因为我既不懂 `react` ，也不懂 `agent` ，甚至连 Typescript 懂得都不是很多。
+我 Vibe 了项目的基础架构。基于 `Expo` 和 ``React Native`` 构建移动端应用，agent 本体采用 Typescript 实现，涉及 Android 原生能力，通过 Expo Modules API 编写 Kotlin 原生模块。主要是为了后续的跨平台做准备。
 
 ## Typescript
 
@@ -14,135 +12,9 @@
 
 ## React
 
-### F(props, state) -> UI
+又补充了一波 React 的基础知识，这是真的一点也不会啊。记录在了
 
-```javascript
-F(props, state) -> UI
-```
-
-这是 `react` 的一种设计理念，我理解就是，UI 组件会被 `react` 表达成一个 JS 函数 `F`，如下所示：
-
-```javascript
-function F(props) {
-  return <Text>{props}</Text>;
-}
-```
-
-可以看到返回的部分是一个类似于 HTML 的代码（BTW，这种语法叫做 `JSX`，也就是 JavaScript XML）。然后这个 HTML 代码内部是用 `{}` 嵌入了 JS 的函数变量的。在渲染过程中，react 就会调用这个函数，来渲染出相关的组件。
-
-> 强调一下，只要触发 UI 的渲染，react 都会重新调用这个函数。
-
-`props` 是 `properties` 的缩写，说白了就是组件的输入，也就是函数的参数。
-
-那么为什么还有一个 `state` ，这是因为如果仅依赖 `props` 那么函数就是一个毫无副作用的纯函数了，这样表达能力有限，所以我们还需要一种类似于“全局变量”的东西，去帮我们跨渲染次数的维护状态，这就是 `state` 。引入了 `state` 的示意函数如图所示：
-
-```javascript
-function F(props) {
-  const initValue = 'hello';
-  const [state, setState] = useState(initValue);
-  return <Text>{props + state}</Text>;
-}
-```
-
-可以看到我们用 `useState()` 声明了一个 `state`：
-
-```javascript
-const [state, setState] = useState(initValue);
-```
-
-我们传入 state 的初始值，返回这个 state 和它对应的 setter 。之所以需要额外的 setter，是因为 react 需要拦截 state 的变化，方便异步编程。
-
-### UseEffect
-
-那么 state 有什么独特之处呢？我理解 state 是构建 react 异步编程的重要节点。当 state 发生变化的时候，注册在它上面的 callback 函数就会被调用，进而导致 UI 状态的刷新。盲猜一波，这就是 react 名字“响应式”的由来。
-
-为了实现这个功能，react 采用 `useEffect()` 来实现：
-
-```javascript
-useEffect(callback, dependency);
-```
-
-也就是当 `dependency` 发生变化的时候，就调用 `callback` 函数。`dependency` 就是一个 state 数组。比如说：
-
-```javascript
-useEffect(() => {
-  console.log(count);
-}, [count]);
-```
-
-以后 `count` 这个 state 每次变化的时候，都会在控制台打印它。
-
-此外 `dependency` 也有两种特殊情况：
-
-```java
-useEffect(callback); // 本次 UI 提交后执行，以后每次提交渲染后也执行
-useEffect(callback, []); // 首次 UI 提交后执行，普通重新渲染不会再次执行。
-```
-
-需要注意的是，它们都是“UI 提交”（也就是 `return` ）后执行，这是因为提交意味着“渲染成功”，此时再计算副作用才是合理的；如果渲染失败了，那就不应该考虑副作用。
-
-这个执行顺序也很有趣，也就是说有如下例子：
-
-```javascript
-function F() {
-  const [state, setState] = useState(1);
-  useEffect(() => {
-    console.log(count);
-  }, []);
-  console.log(2);
-  return <Text>"hello"</Text>;
-}
-// print "2 1", not "1 2"
-```
-
-### SafeArea
-
-`safe` 指屏幕上不会被设备系统元素遮挡的可用区域。
-
-### UseRef
-
-`useRef()` 和 `useState()` 类似，都是可以跨函数保存的“全局变量”，但是 `useRef` 是不会触发渲染的，也就是你修改了 `useRef()` 并不会导致 UI 重新渲染，所以一般使用 `useRef` 的都不是在 UI 上会展示的变量。
-
-`useRef` 使用方法如下：
-
-```java
-const value = useRef(initialValue);
-
-value.current;       // read
-value.current = xxx; // write
-```
-
-注意它是不需要 setter 来更新的。这是因为 ref 不会触发渲染，也不会触发 effect ，所以没必要额外用一个 setter 去拦截。
-
-### UseCallback
-
-虽然这个 hook 的名字叫做 `callback` ，但是和回调这个动作没有关系（我还以为它和 `useEffect()` 相似呢）。它主要是避免回调函数的重复声明，看下面这个例子：
-
-```javascript
-function Counter() {
-  const [count, setCount] = useState(0);
-
-  const increment = () => {
-    setCount(count + 1);
-  };
-
-  return <Button title="Add" onPress={increment} />;
-}
-```
-
-可以看到这里定义了一个 `increment` 函数，但是问题在于，每次重新渲染的时候，都会重新定义创建一遍 `increment` ，在不同的渲染调用中，这是不同的，这就产生了一定的开销。能不能每次都复用函数呢？这就是 `useCallback` 的作用：
-
-```javascript
-function Counter() {
-  const [count, setCount] = useState(0);
-
-  const increment = useCallback(() => {
-    setCount((prev) => prev + 1);
-  }, []);
-
-  return <Button title="Add" onPress={increment} />;
-}
-```
+了解过后感觉 DSH 的那一套理论，也没有那么石破天惊了。可能像前端这种复杂场景，早就需要用函数式，effect 等形式化的表述了。
 
 ## Folder Structure
 
@@ -155,6 +27,7 @@ APP 的入口文件是 `app.tsx` ，里面进行了初始化，并调用了 `src
   - `model/`: 模型 API 适配
   - `tools/`: 模型用到的工具
   - `memory/`: 模型记忆
+- `module`: Android 原生模块
 - `scripts/`: 开发脚本
 - `eval/`: 评测框架
 
@@ -179,3 +52,38 @@ conversation 1：讨论旅行计划
    ├─ tool message：工具返回天气信息
    └─ assistant message：根据天气给出建议
 ```
+
+### Loop
+
+如前所述，当用户输入了一条信息（prompt）以后，就会发生：
+
+```javascript
+send() => runTurn() =>  runAgent()
+```
+
+在 `runTurn()` 中，主要是负责：
+
+- 组装 `context`:
+  - `history`: 过去的历史信息，LLM API 是无状态的。这里会根据 `maxChar` 对较老的历史做截断。
+  - `tools`: 工具调用信息
+  - `systemPrompt`: 这一版是 agent 生成的，感觉主要强调了时间，工具调用，避免幻觉
+  - `prompt`: 也就是用户的输入
+- 让 agent 输出落盘到数据库中。
+
+而 `runAgent()` 就是经典的 ReAct Loop，调用 Model API，处理 tool calls，并用传入的 `publish` 更新页面。
+
+### Session
+
+目前用 mysql 来持久化 session 。主要是 `conversations` 和 `messages` 两张表。`messages` 里面每个表项是一条 `message` ，通过 `conversationId` 来记录自己属于哪个 `conversation` 。
+
+### Tools
+
+`execute()` 是 tools 的实现，是不用发给大模型的。
+
+## Summary
+
+目前只有一个基础的 agent loop 。前路险阻呀，因为我既不懂 `react` ，也不懂 `agent` ，甚至连 Typescript 懂得都不是很多。
+
+希望后面能开发出一个模块化很好的 agent 的，为插件化做准备。
+
+不应该 vibe 一大坨的，太难 review 了。

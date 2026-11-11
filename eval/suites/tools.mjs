@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { streamModelCall } from '../../src/model/openai-compatible.ts';
-import { createTools } from '../../src/tools/index.ts';
+import { bindToolContext } from '../../src/tools/index.ts';
 import { savedHistory } from '../helpers.mjs';
 import { listMemories } from '../../src/memory/store.ts';
 
@@ -27,7 +27,7 @@ export const tools = [
     modes: ['scripted'],
     async run(ctx) {
       const systemPrompt = 'Use the supplied application policy verbatim.';
-      const registered = createTools({
+      const registered = bindToolContext({
         conversationId: 'stream-contract',
         currentUser: () => ({ id: 'user', role: 'user', content: 'Hello' }),
       });
@@ -132,7 +132,7 @@ export const tools = [
     modes: ['scripted'],
     async run(ctx) {
       const conversation = await savedHistory('Remember: I live in Nanjing.');
-      const tools = createTools({
+      const tools = bindToolContext({
         conversationId: conversation.id,
         currentUser: () => conversation.messages[0],
       });

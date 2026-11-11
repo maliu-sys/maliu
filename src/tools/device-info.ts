@@ -4,8 +4,8 @@ import { throwIfAborted } from '../agent/timeout';
 
 export const deviceInfo: ToolDefinition = {
   name: 'get_device_info',
-  description:
-    'Read this Android device manufacturer, model, Android version, API level and supported CPU architectures.',
+  description: `Read this Android device manufacturer, model, Android version,
+API level and supported CPU architectures.`,
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   async execute(args, signal) {
     if (

@@ -1,17 +1,6 @@
 import { throwIfAborted } from '../agent/timeout';
 import { getDatabase, nextOrder, writeTransaction } from '../storage/database';
 import type { Memory } from './types';
-import { preferenceContext, preferenceKeys } from './context';
-
-export async function loadPreferenceContext(): Promise<string> {
-  const rows = await (
-    await getDatabase()
-  ).getAllAsync<Memory>(
-    `SELECT * FROM memories WHERE key IN (${preferenceKeys.map(() => '?').join(',')}) AND value IS NOT NULL`,
-    ...preferenceKeys,
-  );
-  return preferenceContext(rows);
-}
 
 export async function listMemories(includeDeleted = false): Promise<Memory[]> {
   return (await getDatabase()).getAllAsync<Memory>(

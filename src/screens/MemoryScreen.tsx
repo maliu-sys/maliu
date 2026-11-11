@@ -11,9 +11,8 @@ import {
 import { errorMessage } from '../agent/types';
 import { useTheme } from '../components/theme';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { preferenceContext } from '../memory/context';
 import { editMemory, listMemories } from '../memory/store';
-import { memoryValue } from '../memory/tools';
+import { memoryValue } from '../tools/memory';
 import type { Memory } from '../memory/types';
 
 export function MemoryScreen({
@@ -74,7 +73,7 @@ export function MemoryScreen({
           The agent saves useful facts and preferences during chat, with source
           quotes you can review below. You can also ask it to remember, correct
           or forget something. Original conversations remain searchable in
-          History.
+          History. The agent searches saved memories when needed.
         </Text>
         {!!error && (
           <Text accessibilityRole="alert" style={{ color: theme.error }}>
@@ -157,12 +156,6 @@ export function MemoryScreen({
             </View>
           </View>
         ))}
-        <Text style={{ color: theme.text, fontWeight: '700' }}>
-          Automatic context · at most 1,200 characters
-        </Text>
-        <Text selectable style={{ color: theme.muted }}>
-          {preferenceContext(memories) || 'No common preferences saved.'}
-        </Text>
       </ScrollView>
     </View>
   );

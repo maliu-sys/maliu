@@ -136,10 +136,7 @@ export const device = [
         await tap('Back');
         await navigate('Memory');
         const memoryPage = await ui();
-        ctx.check(
-          'memory screen opens',
-          memoryPage.includes('Automatic context'),
-        );
+        ctx.check('memory screen opens', !!nodeFor(memoryPage, 'Memory'));
         ctx.check(
           'memory page describes in-turn writes',
           memoryPage.includes('The agent saves useful facts') &&
@@ -177,7 +174,7 @@ export const device = [
         await navigate('Memory');
         ctx.check(
           'memory destination ready for Android back',
-          (await ui()).includes('Automatic context'),
+          !!nodeFor(await ui(), 'Memory'),
         );
         await shell('input', 'keyevent', '4');
         ctx.check(

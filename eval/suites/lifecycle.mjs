@@ -12,22 +12,17 @@ import { searchMemory } from '../../src/memory/search.ts';
 
 export const lifecycle = [
   {
-    id: 'legacy-migration',
+    id: 'restore-interrupted-conversation',
     suite: 'lifecycle',
     modes: ['scripted'],
     async run(ctx) {
-      const legacy = emptyConversation();
-      legacy.status = 'running';
-      legacy.messages = [
-        { id: 'u', role: 'user', content: 'Legacy pnpm preference' },
+      const conversation = emptyConversation();
+      conversation.status = 'running';
+      conversation.messages = [
+        { id: 'u', role: 'user', content: 'Saved pnpm preference' },
         { id: 'a', role: 'assistant', ...call('device_info', {}) },
       ];
-      await (
-        await getDatabase()
-      ).runAsync(
-        "INSERT INTO app_data VALUES ('conversation', ?)",
-        JSON.stringify(legacy),
-      );
+      await saveConversation(conversation);
       const restored = await loadConversation();
       ctx.check(
         'unfinished tool closed without replay',
@@ -35,7 +30,7 @@ export const lifecycle = [
           restored.messages.at(-1).tool_call_id === 'call-1',
       );
       ctx.check(
-        'migration is idempotent',
+        'reloading does not duplicate interrupted tool results',
         (await loadConversation()).messages.length === restored.messages.length,
       );
       await saveConversation(emptyConversation());

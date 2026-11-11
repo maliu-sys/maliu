@@ -73,18 +73,6 @@ export async function persistConversation(
 }
 
 export async function loadConversation(id?: string): Promise<Conversation> {
-  // Migrate the old single JSON slot once, atomically, without losing tool metadata.
-  await writeTransaction(async (tx) => {
-    const legacy = await tx.getFirstAsync<{ value: string }>(
-      "SELECT value FROM app_data WHERE key = 'conversation'",
-    );
-    if (!legacy) return;
-    const conversation = JSON.parse(legacy.value) as Conversation;
-    if (!Array.isArray(conversation.messages))
-      throw new Error('Could not read the saved conversation.');
-    await persistConversation(tx, conversation);
-    await tx.runAsync("DELETE FROM app_data WHERE key = 'conversation'");
-  });
   const active = id ?? (await readValue('active_conversation'));
   const db = await getDatabase();
   const row = active

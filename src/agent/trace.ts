@@ -57,6 +57,7 @@ export function tracedModelCall(
   return async (options) => {
     const backend = complete.mode ?? 'live';
     const span = startSpan(trace, 'model', options.settings.model, { backend });
+    // flatten all contexts
     const inputChars = JSON.stringify({
       messages: options.messages,
       tools: options.tools.map(({ name, description, parameters }) => ({

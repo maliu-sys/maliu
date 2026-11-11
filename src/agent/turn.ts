@@ -8,12 +8,26 @@ import type {
   ModelSettings,
   ToolDefinition,
 } from './types';
-import { recentHistory } from '../memory/context';
-import { loadPreferenceContext } from '../memory/store';
 import { saveConversation } from '../storage/conversations';
-import { createTools, tools as registeredTools } from '../tools/index';
+import { bindToolContext, tools as registeredTools } from '../tools/index';
 
-// The UI and evaluation runner use this same application-level lifecycle.
+// truncate messages of older turns when exceeding `maxChars`
+export function recentHistory(
+  messages: Message[],
+  maxChars = 24000,
+): Message[] {
+  let start = messages.length;
+  let chars = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    chars += JSON.stringify(messages[i]).length;
+    if (chars > maxChars) break;
+    if (messages[i]!.role === 'user') start = i;
+  }
+  return messages.slice(start);
+}
+
+// the wrapper of `runAgent`:
+// assemble the contexts, control the running status and writeback database
 export async function runTurn({
   conversation,
   prompt,
@@ -25,7 +39,7 @@ export async function runTurn({
   onConversation,
   complete,
   trace,
-  context,
+  context = '',
 }: {
   conversation: Conversation;
   prompt: string;
@@ -37,7 +51,6 @@ export async function runTurn({
   onConversation: (conversation: Conversation) => void;
   complete?: ModelCall;
   trace?: TraceContext;
-  // Omit to load saved preferences; an explicit string replaces that context.
   context?: string;
 }): Promise<Conversation> {
   const span = startSpan(trace, 'turn');
@@ -55,6 +68,7 @@ export async function runTurn({
     }
   };
   try {
+    // history + archived = total messages
     const history = recentHistory(current.messages);
     const archived = current.messages.slice(
       0,
@@ -67,7 +81,7 @@ export async function runTurn({
       signal,
       complete,
       trace: span.child,
-      tools: createTools(
+      tools: bindToolContext(
         {
           conversationId: current.id,
           currentUser: () =>
@@ -75,9 +89,7 @@ export async function runTurn({
         },
         tools,
       ),
-      systemPrompt: buildSystemPrompt(
-        context ?? (await loadPreferenceContext()),
-      ),
+      systemPrompt: buildSystemPrompt(context),
       onMessages: (messages) => onMessages([...archived, ...messages]),
       onStatus,
       checkpoint: async (messages) => {
