@@ -2,7 +2,7 @@
 
 ## Architecture
 
-我 Vibe 了项目的基础架构。基于 `Expo` 和 ``React Native`` 构建移动端应用，agent 本体采用 Typescript 实现，涉及 Android 原生能力，通过 Expo Modules API 编写 Kotlin 原生模块。主要是为了后续的跨平台做准备。
+我 Vibe 了项目的基础架构。基于 `Expo` 和 `React Native` 构建移动端应用，agent 本体采用 Typescript 实现，涉及 Android 原生能力，通过 Expo Modules API 编写 Kotlin 原生模块。主要是为了后续的跨平台做准备。
 
 ## Typescript
 

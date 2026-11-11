@@ -126,7 +126,8 @@ export async function runAgent({
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
           const args: unknown = JSON.parse(call.function.arguments);
-          const output = await withTimeout(signal, 30_000, (toolSignal) => // wait most 30s
+          // Wait at most 30 seconds for the tool.
+          const output = await withTimeout(signal, 30_000, (toolSignal) =>
             tool.execute(args, toolSignal),
           );
           content = JSON.stringify(output) ?? 'null';
