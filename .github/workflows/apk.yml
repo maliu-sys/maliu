@@ -46,7 +46,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build release APK
         working-directory: android
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
       - name: Name APK
         run: mv android/app/build/outputs/apk/release/app-release.apk "$APK_BASENAME.apk"
       - name: Upload APK
