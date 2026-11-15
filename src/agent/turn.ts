@@ -1,6 +1,5 @@
 import { runAgent } from './loop';
 import { buildSystemPrompt } from './prompt';
-import { startSpan, type TraceContext } from './trace';
 import type {
   ModelCall,
   Conversation,
@@ -38,7 +37,6 @@ export async function runTurn({
   onStatus,
   onConversation,
   complete,
-  trace,
   context = '',
 }: {
   conversation: Conversation;
@@ -50,23 +48,11 @@ export async function runTurn({
   onStatus: (status: string) => void;
   onConversation: (conversation: Conversation) => void;
   complete?: ModelCall;
-  trace?: TraceContext;
   context?: string;
 }): Promise<Conversation> {
-  const span = startSpan(trace, 'turn');
   let current = conversation;
   let completed = false;
   let succeeded = false;
-  const persist = async (work: () => Promise<void>) => {
-    const checkpoint = startSpan(span.child, 'checkpoint');
-    try {
-      await work();
-      checkpoint.emit('end', { status: 'ok' });
-    } catch (error) {
-      checkpoint.emit('end', { status: 'error' });
-      throw error;
-    }
-  };
   try {
     // history + archived = total messages
     const history = recentHistory(current.messages);
@@ -80,7 +66,6 @@ export async function runTurn({
       settings,
       signal,
       complete,
-      trace: span.child,
       tools: bindToolContext(
         {
           conversationId: current.id,
@@ -100,26 +85,17 @@ export async function runTurn({
           updatedAt: Date.now(),
         };
         onConversation(current);
-        await persist(() => saveConversation(current));
+        await saveConversation(current);
       },
     });
     completed = true;
     current = { ...current, status: 'idle' };
-    await persist(() => saveConversation(current));
+    await saveConversation(current);
     succeeded = true;
     return current;
   } finally {
     current = { ...current, status: completed ? 'idle' : 'interrupted' };
     onConversation(current);
-    try {
-      if (!succeeded) await persist(() => saveConversation(current));
-    } finally {
-      span.emit('end', {
-        status: succeeded ? 'ok' : signal.aborted ? 'cancelled' : 'error',
-        sourceMessageId: current.messages
-          .slice(conversation.messages.length)
-          .find((m) => m.role === 'user')?.id,
-      });
-    }
+    if (!succeeded) await saveConversation(current);
   }
 }

@@ -16,7 +16,6 @@ export function completionUrl(baseUrl: string): string {
 
 type Chunk = {
   error?: unknown;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
   choices?: {
     index?: number;
     finish_reason?: string | null;
@@ -39,7 +38,6 @@ export async function streamModelCall({
   signal,
   onText,
   systemPrompt,
-  onUsage,
   fetcher = fetch,
 }: ModelCallOptions & { fetcher?: typeof fetch }): Promise<
   Pick<Message, 'content' | 'reasoning_content' | 'tool_calls'>
@@ -97,13 +95,11 @@ export async function streamModelCall({
   let content = '';
   let reasoning: string | undefined;
   let finish: string | null = null;
-  let usage: Chunk['usage'];
   const calls = new Map<number, ToolCall>();
   for await (const data of readSSE(response.body)) {
     throwIfAborted(signal);
     if (data.trim() === '[DONE]') break;
     const chunk = JSON.parse(data) as Chunk;
-    if (chunk.usage) usage = chunk.usage;
     if (chunk.error)
       throw new Error('The model provider reported a streaming error.');
     const choice = chunk.choices?.find((item) => !item.index);
@@ -163,7 +159,6 @@ export async function streamModelCall({
     throw new Error('Missing tool calls in model response.');
   if (!content && !toolCalls.length)
     throw new Error('The model returned an empty response.');
-  if (usage) onUsage?.(usage);
   return {
     content,
     ...(reasoning !== undefined ? { reasoning_content: reasoning } : {}),

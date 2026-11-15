@@ -10,11 +10,10 @@ import {
 import { editMemory, listMemories } from '../../src/memory/store.ts';
 import { searchMemory } from '../../src/memory/search.ts';
 
-export const lifecycle = [
+export const conversation = [
   {
-    id: 'restore-interrupted-conversation',
-    suite: 'lifecycle',
-    modes: ['scripted'],
+    id: 'restore-interrupted',
+    suite: 'conversation',
     async run(ctx) {
       const conversation = emptyConversation();
       conversation.status = 'running';
@@ -50,8 +49,7 @@ export const lifecycle = [
   },
   {
     id: 'cancel-during-tool',
-    suite: 'lifecycle',
-    modes: ['scripted'],
+    suite: 'conversation',
     async run(ctx) {
       const controller = new AbortController();
       let current;
@@ -96,15 +94,18 @@ export const lifecycle = [
   },
   {
     id: 'cancel-before-memory-write',
-    suite: 'lifecycle',
-    modes: ['scripted'],
+    suite: 'conversation',
     async run(ctx) {
       const controller = new AbortController();
+      let toolStarted = false;
       await assert.rejects(
         turn(ctx, {
           prompt: 'I live in Hangzhou.',
           useMemory: true,
           signal: controller.signal,
+          onStatus: (status) => {
+            if (status.startsWith('Running ')) toolStarted = true;
+          },
           complete: scripted(() => {
             controller.abort(new Error('Stopped.'));
             return call('memory_upsert', {
@@ -119,16 +120,12 @@ export const lifecycle = [
         'cancelled call never writes a fact',
         (await listMemories()).length === 0,
       );
-      ctx.check(
-        'cancelled call never starts a tool',
-        !ctx.events.some((e) => e.kind === 'tool'),
-      );
+      ctx.check('cancelled call never starts a tool', !toolStarted);
     },
   },
   ...['cancel', 'failure'].map((ending) => ({
     id: `memory-write-survives-${ending}`,
-    suite: 'lifecycle',
-    modes: ['scripted'],
+    suite: 'conversation',
     async run(ctx) {
       const controller = new AbortController();
       let current;
@@ -174,8 +171,7 @@ export const lifecycle = [
   })),
   {
     id: 'retired-extraction-jobs',
-    suite: 'lifecycle',
-    modes: ['scripted'],
+    suite: 'conversation',
     async run(ctx) {
       const conversation = await savedHistory('I live in Shanghai.');
       const source = conversation.messages[0];
@@ -198,10 +194,11 @@ export const lifecycle = [
         conversation.id,
         JSON.stringify({ messages: [source] }),
       );
+      const complete = scripted(reply('Hello.'));
       await turn(ctx, {
         prompt: 'Hello.',
         useMemory: true,
-        complete: scripted(reply('Hello.')),
+        complete,
       });
       const [memory] = await listMemories();
       ctx.check(
@@ -214,11 +211,7 @@ export const lifecycle = [
           (await db.getFirstAsync('SELECT status FROM memory_jobs')).status ===
             'pending',
       );
-      ctx.check(
-        'only the foreground model ran',
-        ctx.events.filter((e) => e.kind === 'model' && e.event === 'start')
-          .length === 1,
-      );
+      ctx.check('only the foreground model ran', complete.calls === 1);
       await deleteConversation(conversation.id);
       ctx.check(
         'source deletion also clears legacy snapshots',

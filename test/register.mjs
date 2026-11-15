@@ -5,12 +5,12 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === 'expo')
       return {
-        url: `data:text/javascript,export function requireNativeModule(name) { throw new Error('Native module ' + name + ' requires device evaluation.'); }`,
+        url: `data:text/javascript,export function requireNativeModule(name) { throw new Error('Native module ' + name + ' is unavailable in Node tests.'); }`,
         shortCircuit: true,
       };
     if (specifier === 'expo-sqlite')
       return {
-        url: new URL('./node/sqlite.mjs', import.meta.url).href,
+        url: new URL('./sqlite.mjs', import.meta.url).href,
         shortCircuit: true,
       };
     if (specifier === 'expo/fetch')

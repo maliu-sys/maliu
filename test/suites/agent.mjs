@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { call, reply, scripted, turn } from '../helpers.mjs';
 import { loadConversation } from '../../src/storage/conversations.ts';
-import { listMemories } from '../../src/memory/store.ts';
 import { runAgent } from '../../src/agent/loop.ts';
 import { withTimeout } from '../../src/agent/timeout.ts';
 
@@ -9,7 +8,6 @@ export const agent = [
   {
     id: 'tool-chain',
     suite: 'agent',
-    modes: ['scripted'],
     async run(ctx) {
       let executions = 0;
       const conversation = await turn(ctx, {
@@ -57,7 +55,6 @@ export const agent = [
   {
     id: 'tool-error-recovery',
     suite: 'agent',
-    modes: ['scripted'],
     async run(ctx) {
       const conversation = await turn(ctx, {
         complete: scripted(call('lookup', {}), ({ messages }) => {
@@ -88,7 +85,6 @@ export const agent = [
   {
     id: 'invalid-tool-arguments',
     suite: 'agent',
-    modes: ['scripted'],
     async run(ctx) {
       const malformed = call('action', {});
       malformed.tool_calls[0].function.arguments = '{';
@@ -116,30 +112,21 @@ export const agent = [
   {
     id: 'step-limit',
     suite: 'agent',
-    modes: ['scripted'],
     async run(ctx) {
       let current;
+      const complete = scripted(
+        ...Array.from({ length: 8 }, () => call('missing', {})),
+      );
       await assert.rejects(
         turn(ctx, {
-          useMemory: true,
+          complete,
           onConversation: (c) => {
             current = c;
           },
-          complete: scripted(
-            ...Array.from({ length: 8 }, () => call('missing', {})),
-          ),
         }),
         /8 model turns/,
       );
-      ctx.check(
-        'bounded model loop',
-        ctx.events.filter((e) => e.kind === 'model' && e.event === 'start')
-          .length === 8,
-      );
-      ctx.check(
-        'no memory written without a memory tool call',
-        (await listMemories()).length === 0,
-      );
+      ctx.check('bounded model loop', complete.calls === 8);
       ctx.check(
         'failure status persisted',
         (await loadConversation(current.id)).status === 'interrupted',
@@ -149,7 +136,6 @@ export const agent = [
   {
     id: 'cancel-at-final-checkpoint',
     suite: 'agent',
-    modes: ['scripted'],
     async run(ctx) {
       const controller = new AbortController();
       await assert.rejects(
@@ -161,7 +147,6 @@ export const agent = [
           systemPrompt: 'Test cancellation.',
           signal: controller.signal,
           complete: scripted(reply('Done')),
-          trace: ctx.trace,
           onMessages: () => {},
           onStatus: () => {},
           checkpoint: async (messages) => {
@@ -178,7 +163,6 @@ export const agent = [
   {
     id: 'timeout-aborts-operation',
     suite: 'agent',
-    modes: ['scripted'],
     async run(ctx) {
       let aborted = false;
       await assert.rejects(

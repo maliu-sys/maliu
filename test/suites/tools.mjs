@@ -24,7 +24,6 @@ export const tools = [
   {
     id: 'stream-fragments',
     suite: 'tools',
-    modes: ['scripted'],
     async run(ctx) {
       const systemPrompt = 'Use the supplied application policy verbatim.';
       const registered = bindToolContext({
@@ -106,7 +105,6 @@ export const tools = [
   {
     id: 'incomplete-stream',
     suite: 'tools',
-    modes: ['scripted'],
     async run(ctx) {
       await assert.rejects(
         streamModelCall({
@@ -129,7 +127,6 @@ export const tools = [
   {
     id: 'memory-write-contract',
     suite: 'tools',
-    modes: ['scripted'],
     async run(ctx) {
       const conversation = await savedHistory('Remember: I live in Nanjing.');
       const tools = bindToolContext({

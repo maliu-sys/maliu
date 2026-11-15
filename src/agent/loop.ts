@@ -8,7 +8,6 @@ import {
   type ModelCall,
 } from './types';
 import { throwIfAborted, withTimeout } from './timeout';
-import { startSpan, tracedModelCall, type TraceContext } from './trace';
 
 // Close outstanding calls after an interrupted run; never replay a device action.
 export function closePendingTools(messages: Message[]): Message[] {
@@ -53,7 +52,6 @@ export async function runAgent({
   checkpoint,
   systemPrompt,
   complete = streamModelCall,
-  trace,
 }: {
   history: Message[];
   prompt: string; // current input
@@ -65,9 +63,7 @@ export async function runAgent({
   checkpoint: (messages: Message[]) => Promise<void>; // save to sql
   systemPrompt: string;
   complete?: ModelCall;
-  trace?: TraceContext;
 }): Promise<void> {
-  const callModel = tracedModelCall(complete, trace);
   let messages: Message[] = [
     ...closePendingTools(history),
     { id: newId(), createdAt: Date.now(), role: 'user', content: prompt },
@@ -87,7 +83,7 @@ export async function runAgent({
       const createdAt = Date.now();
       draft = { id: draftId, createdAt, role: 'assistant', content: '' };
       const answer = await withTimeout(signal, 120_000, (requestSignal) =>
-        callModel({
+        complete({
           settings,
           messages,
           tools,
@@ -121,7 +117,6 @@ export async function runAgent({
         onStatus(`Running ${call.function.name}…`);
         let content: string;
         let isError = false;
-        const toolSpan = startSpan(trace, 'tool', call.function.name);
         try {
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
@@ -135,10 +130,6 @@ export async function runAgent({
           isError = true;
           throwIfAborted(signal);
           content = JSON.stringify({ error: errorMessage(error) });
-        } finally {
-          toolSpan.emit('end', {
-            status: signal.aborted ? 'cancelled' : isError ? 'error' : 'ok',
-          });
         }
         throwIfAborted(signal);
         messages = [

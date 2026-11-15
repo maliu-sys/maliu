@@ -23,7 +23,6 @@ export const tasks = [
   {
     id: 'reschedule-and-notify',
     suite: 'tasks',
-    modes: ['scripted', 'live'],
     async run(ctx) {
       const state = {
         meetings: {
@@ -80,19 +79,16 @@ export const tasks = [
         prompt:
           'Move meeting target to January 12, 2027 at 15:00 in UTC+08:00, and notify its attendees once. Leave other meetings unchanged.',
         tools,
-        complete:
-          ctx.mode === 'live'
-            ? ctx.complete
-            : scripted(
-                call('list_meetings', {}),
-                call(
-                  'move_meeting',
-                  { id: 'target', time: '2027-01-12T15:00:00+08:00' },
-                  'b',
-                ),
-                call('notify_meeting', { id: 'target' }, 'c'),
-                reply('Done.'),
-              ),
+        complete: scripted(
+          call('list_meetings', {}),
+          call(
+            'move_meeting',
+            { id: 'target', time: '2027-01-12T15:00:00+08:00' },
+            'b',
+          ),
+          call('notify_meeting', { id: 'target' }, 'c'),
+          reply('Done.'),
+        ),
       });
       for (const [name, pass] of calendarOutcome(state)) ctx.check(name, pass);
       ctx.artifact('finalState', state);

@@ -43,21 +43,17 @@ export type ModelSettings = {
   apiKey: string;
 };
 
-export type Usage = { prompt_tokens?: number; completion_tokens?: number };
 export type ModelCallOptions = {
   settings: ModelSettings;
   messages: Message[];
   tools: Tool[];
   signal: AbortSignal;
   onText: (content: string) => void;
-  onUsage?: (usage: Usage) => void;
   systemPrompt: string;
 };
-export type ModelCall = ((
+export type ModelCall = (
   options: ModelCallOptions,
-) => Promise<Pick<Message, 'content' | 'reasoning_content' | 'tool_calls'>>) & {
-  mode?: 'live' | 'scripted';
-};
+) => Promise<Pick<Message, 'content' | 'reasoning_content' | 'tool_calls'>>;
 
 export type Conversation = {
   id: string;

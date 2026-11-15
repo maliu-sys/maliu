@@ -5,7 +5,6 @@ import {
 import { runTurn } from '../src/agent/turn.ts';
 import { memoryTools } from '../src/tools/memory.ts';
 
-export const signal = () => new AbortController().signal;
 export const reply = (content) => ({ content });
 export const call = (name, args, id = 'call-1') => ({
   content: '',
@@ -21,16 +20,16 @@ export const call = (name, args, id = 'call-1') => ({
 // Scripted responses exercise production orchestration; exhaustion is a failure.
 export function scripted(...steps) {
   let index = 0;
-  return Object.assign(
-    async (options) => {
-      if (index >= steps.length) throw new Error('Scripted model exhausted.');
-      const step = steps[index++];
-      const answer = typeof step === 'function' ? await step(options) : step;
-      if (answer.content) options.onText(answer.content);
-      return answer;
-    },
-    { mode: 'scripted' },
-  );
+  const complete = async (options) => {
+    complete.calls++;
+    if (index >= steps.length) throw new Error('Scripted model exhausted.');
+    const step = steps[index++];
+    const answer = typeof step === 'function' ? await step(options) : step;
+    if (answer.content) options.onText(answer.content);
+    return answer;
+  };
+  complete.calls = 0;
+  return complete;
 }
 
 export function turn(
@@ -44,7 +43,6 @@ export function turn(
     context,
     signal: ctx.signal,
     settings: ctx.settings,
-    trace: ctx.trace,
     complete: scripted(reply('Hello.')),
     onMessages: () => {},
     onStatus: () => {},
