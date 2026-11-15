@@ -85,7 +85,8 @@ export const tools = [
         [
           'web_search',
           'get_device_info',
-          'memory_search',
+          'fact_search',
+          'history_search',
           'fact_upsert',
           'fact_delete',
         ].every((name) =>
