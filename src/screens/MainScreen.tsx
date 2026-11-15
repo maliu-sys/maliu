@@ -21,7 +21,7 @@ import {
 import { NavigationDrawer, type Screen } from '../components/NavigationDrawer';
 import { ChatScreen } from './ChatScreen';
 import { SettingsScreen } from './SettingsScreen';
-import { MemoryScreen } from './MemoryScreen';
+import { FactsScreen } from './FactsScreen';
 import { HistoryScreen } from './HistoryScreen';
 import { ToolsScreen } from './ToolsScreen';
 
@@ -189,9 +189,9 @@ export function MainScreen({
         />
       );
       break;
-    case 'memory':
+    case 'facts':
       content = (
-        <MemoryScreen
+        <FactsScreen
           onMenu={openMenu}
           onBack={backToChat}
           onOpen={openConversation}

@@ -1,3 +1,4 @@
+// Saved facts retain the legacy SQL table names (memories and memory_clock).
 export const schema = `
   CREATE TABLE IF NOT EXISTS app_data (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS conversations (

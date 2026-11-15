@@ -1,12 +1,13 @@
 import { getDatabase } from '../storage/database';
-import type { Memory } from './types';
+import type { Fact } from './types';
 
-export type SearchScope = 'all' | 'atomic' | 'conversations';
+export type SearchScope = 'all' | 'facts' | 'history';
 export type SearchHit = {
-  type: 'atomic' | 'conversation';
+  type: 'fact' | 'history';
   key?: string;
   value?: string;
   evidence?: string;
+  origin?: Fact['origin'];
   conversationId?: string | null;
   messageId?: string | null;
   updatedAt?: number;
@@ -38,7 +39,6 @@ function excerpt(text: string, words: string[], limit: number): string {
 export async function searchMemory(
   query: string,
   scope: SearchScope = 'all',
-  conversationId?: string,
   excludeTurn?: { conversationId: string; messageId: string },
 ): Promise<SearchHit[]> {
   const words = [
@@ -52,42 +52,44 @@ export async function searchMemory(
   if (!words.length) return [];
   const db = await getDatabase();
   const hits: SearchHit[] = [];
-  const predicate = (column: string) =>
-    words.map(() => `instr(lower(${column}), ?) > 0`).join(' OR ');
-  if (scope !== 'conversations') {
-    const rows = await db.getAllAsync<Memory>(
-      `SELECT * FROM memories WHERE value IS NOT NULL AND (${predicate("key || ' ' || value || ' ' || evidence")}) ORDER BY changeOrder DESC LIMIT 5`,
+  const score = (column: string) =>
+    words.map(() => `(instr(lower(${column}), ?) > 0)`).join(' + ');
+  if (scope !== 'history') {
+    const rows = await db.getAllAsync<Fact>(
+      `SELECT *, (${score("key || ' ' || value || ' ' || evidence")}) AS relevance
+       FROM memories WHERE value IS NOT NULL AND relevance > 0
+       ORDER BY relevance DESC, changeOrder DESC LIMIT 5`,
       ...words,
     );
     hits.push(
       ...rows.map((m): SearchHit => ({
-        type: 'atomic',
+        type: 'fact',
         key: m.key,
         value: m.value!,
         evidence: m.evidence,
+        origin: m.origin,
         conversationId: m.conversationId,
         messageId: m.messageId,
         updatedAt: m.updatedAt,
       })),
     );
   }
-  if (scope !== 'atomic') {
+  if (scope !== 'facts') {
     const rows = await db.getAllAsync<{
       id: string;
       conversationId: string;
       position: number;
       title: string;
     }>(
-      `SELECT m.id, m.conversationId, m.position, c.title FROM messages m JOIN conversations c ON c.id = m.conversationId
-       WHERE (${predicate('m.content')}) ${conversationId ? 'AND m.conversationId = ?' : ''}
+      `SELECT m.id, m.conversationId, m.position, c.title, (${score('m.content')}) AS relevance
+       FROM messages m JOIN conversations c ON c.id = m.conversationId
+       WHERE relevance > 0
        ${excludeTurn ? 'AND (m.conversationId != ? OR m.position < (SELECT position FROM messages WHERE id = ?))' : ''}
-       ORDER BY (${words.map(() => '(instr(lower(m.content), ?) > 0)').join(' + ')}) DESC, m.createdAt DESC LIMIT 5`,
+       ORDER BY relevance DESC, m.createdAt DESC, m.id LIMIT 5`,
       ...words,
-      ...(conversationId ? [conversationId] : []),
       ...(excludeTurn
         ? [excludeTurn.conversationId, excludeTurn.messageId]
         : []),
-      ...words,
     );
     for (const row of rows) {
       const nearby = await db.getAllAsync<{
@@ -106,21 +108,23 @@ export async function searchMemory(
           : []),
       );
       hits.push({
-        type: 'conversation',
+        type: 'history',
         conversationId: row.conversationId,
         messageId: row.id,
         title: row.title,
-        messages: nearby.map((m) => ({
-          ...m,
-          content: excerpt(m.content, words, 600),
-          matched: m.id === row.id,
+        messages: nearby.map((message) => ({
+          ...message,
+          content: excerpt(message.content, words, 600),
+          matched: message.id === row.id,
         })),
       });
     }
   }
   let size = 0;
   return hits.filter((hit) => {
-    size += JSON.stringify(hit).length;
-    return size <= 8000;
+    const length = JSON.stringify(hit).length;
+    if (size + length > 8000) return false;
+    size += length;
+    return true;
   });
 }

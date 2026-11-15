@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { streamModelCall } from '../../src/model/openai-compatible.ts';
 import { bindToolContext } from '../../src/tools/index.ts';
 import { savedHistory } from '../helpers.mjs';
-import { listMemories } from '../../src/memory/store.ts';
+import { listFacts } from '../../src/memory/store.ts';
 
 function stream(chunks) {
   const text =
@@ -86,8 +86,8 @@ export const tools = [
           'web_search',
           'get_device_info',
           'memory_search',
-          'memory_upsert',
-          'memory_delete',
+          'fact_upsert',
+          'fact_delete',
         ].every((name) =>
           request.tools.some(
             (tool) => tool.type === 'function' && tool.function.name === name,
@@ -125,7 +125,7 @@ export const tools = [
     },
   },
   {
-    id: 'memory-write-contract',
+    id: 'fact-write-contract',
     suite: 'tools',
     async run(ctx) {
       const conversation = await savedHistory('Remember: I live in Nanjing.');
@@ -133,8 +133,8 @@ export const tools = [
         conversationId: conversation.id,
         currentUser: () => conversation.messages[0],
       });
-      const upsert = tools.find((tool) => tool.name === 'memory_upsert');
-      const remove = tools.find((tool) => tool.name === 'memory_delete');
+      const upsert = tools.find((tool) => tool.name === 'fact_upsert');
+      const remove = tools.find((tool) => tool.name === 'fact_delete');
       await assert.rejects(
         upsert.execute(
           { key: 'user.city', value: 'Nanjing', evidence: 'invented' },
@@ -143,7 +143,7 @@ export const tools = [
       );
       ctx.check(
         'unsupported evidence rejected without writing',
-        (await listMemories()).length === 0,
+        (await listFacts()).length === 0,
       );
       await upsert.execute(
         { key: 'user.city', value: 'Nanjing', evidence: 'I live in Nanjing' },
@@ -151,13 +151,10 @@ export const tools = [
       );
       ctx.check(
         'supported fact persisted',
-        (await listMemories())[0]?.value === 'Nanjing',
+        (await listFacts())[0]?.value === 'Nanjing',
       );
       await remove.execute({ key: 'user.city' }, ctx.signal);
-      ctx.check(
-        'delete removes atomic fact',
-        (await listMemories()).length === 0,
-      );
+      ctx.check('delete removes fact', (await listFacts()).length === 0);
     },
   },
 ];

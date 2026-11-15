@@ -11,11 +11,11 @@ import {
 import { errorMessage } from '../agent/types';
 import { useTheme } from '../components/theme';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { editMemory, listMemories } from '../memory/store';
-import { memoryValue } from '../tools/memory';
-import type { Memory } from '../memory/types';
+import { editFact, listFacts } from '../memory/store';
+import { factValue } from '../tools/memory';
+import type { Fact } from '../memory/types';
 
-export function MemoryScreen({
+export function FactsScreen({
   onBack,
   onMenu,
   onOpen,
@@ -25,12 +25,12 @@ export function MemoryScreen({
   onOpen: (id: string) => Promise<void>;
 }) {
   const theme = useTheme();
-  const [memories, setMemories] = useState<Memory[]>([]);
+  const [facts, setFacts] = useState<Fact[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const refresh = useCallback(() => listMemories().then(setMemories), []);
+  const refresh = useCallback(() => listFacts().then(setFacts), []);
   useEffect(() => {
     void refresh().catch((e: unknown) => setError(errorMessage(e)));
   }, [refresh]);
@@ -60,7 +60,7 @@ export function MemoryScreen({
   return (
     <View style={{ flex: 1 }}>
       <ScreenHeader
-        title="Memory"
+        title="Facts"
         onMenu={onMenu}
         busy={busy}
         action={{ label: 'Back', onPress: onBack }}
@@ -73,17 +73,17 @@ export function MemoryScreen({
           The agent saves useful facts and preferences during chat, with source
           quotes you can review below. You can also ask it to remember, correct
           or forget something. Original conversations remain searchable in
-          History. The agent searches saved memories when needed.
+          History. The agent searches saved facts when needed.
         </Text>
         {!!error && (
           <Text accessibilityRole="alert" style={{ color: theme.error }}>
             {error}
           </Text>
         )}
-        {!memories.length && (
+        {!facts.length && (
           <Text style={{ color: theme.muted }}>No saved facts yet.</Text>
         )}
-        {memories.map((m) => (
+        {facts.map((m) => (
           <View
             key={m.key}
             style={[styles.card, { borderColor: theme.border }]}
@@ -94,7 +94,7 @@ export function MemoryScreen({
             {editing === m.key ? (
               <>
                 <TextInput
-                  accessibilityLabel="Memory value"
+                  accessibilityLabel="Fact value"
                   value={value}
                   onChangeText={setValue}
                   multiline
@@ -109,7 +109,7 @@ export function MemoryScreen({
                     'Save',
                     () =>
                       void perform(async () => {
-                        await editMemory(m.key, memoryValue(value));
+                        await editFact(m.key, factValue(value));
                         setEditing(null);
                       }),
                   )}
@@ -140,15 +140,14 @@ export function MemoryScreen({
                 )}
               {button('Delete', () =>
                 Alert.alert(
-                  'Delete memory?',
-                  'This removes the atomic fact. Original conversations remain searchable. A later new statement can create the fact again.',
+                  'Delete fact?',
+                  'This removes the fact. Original history remains searchable. A later new statement can create the fact again.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     {
                       text: 'Delete',
                       style: 'destructive',
-                      onPress: () =>
-                        void perform(() => editMemory(m.key, null)),
+                      onPress: () => void perform(() => editFact(m.key, null)),
                     },
                   ],
                 ),

@@ -12,7 +12,7 @@ import { useTheme } from './theme';
 const destinations = [
   { id: 'chat', label: 'Chat' },
   { id: 'history', label: 'History' },
-  { id: 'memory', label: 'Memory' },
+  { id: 'facts', label: 'Facts' },
   { id: 'tools', label: 'Tools' },
   { id: 'settings', label: 'Settings' },
 ] as const;

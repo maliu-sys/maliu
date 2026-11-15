@@ -1,4 +1,4 @@
-export type Memory = {
+export type Fact = {
   key: string;
   value: string | null;
   evidence: string;

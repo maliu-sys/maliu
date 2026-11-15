@@ -7,7 +7,7 @@ import {
   emptyConversation,
   saveConversation,
 } from '../../src/storage/conversations.ts';
-import { editMemory, listMemories } from '../../src/memory/store.ts';
+import { editFact, listFacts } from '../../src/memory/store.ts';
 import { searchMemory } from '../../src/memory/search.ts';
 
 export const conversation = [
@@ -42,8 +42,8 @@ export const conversation = [
         (await searchMemory('device_info')).length > 0,
       );
       ctx.check(
-        'loading history does not create atomic memories',
-        (await listMemories()).length === 0,
+        'loading history does not create facts',
+        (await listFacts()).length === 0,
       );
     },
   },
@@ -87,13 +87,13 @@ export const conversation = [
         restored.messages.at(-1).isError === true,
       );
       ctx.check(
-        'no memory change without a memory tool call',
-        (await listMemories()).length === 0,
+        'no fact change without a fact tool call',
+        (await listFacts()).length === 0,
       );
     },
   },
   {
-    id: 'cancel-before-memory-write',
+    id: 'cancel-before-fact-write',
     suite: 'conversation',
     async run(ctx) {
       const controller = new AbortController();
@@ -108,7 +108,7 @@ export const conversation = [
           },
           complete: scripted(() => {
             controller.abort(new Error('Stopped.'));
-            return call('memory_upsert', {
+            return call('fact_upsert', {
               key: 'user.city',
               value: 'Hangzhou',
               evidence: 'I live in Hangzhou.',
@@ -118,13 +118,13 @@ export const conversation = [
       );
       ctx.check(
         'cancelled call never writes a fact',
-        (await listMemories()).length === 0,
+        (await listFacts()).length === 0,
       );
       ctx.check('cancelled call never starts a tool', !toolStarted);
     },
   },
   ...['cancel', 'failure'].map((ending) => ({
-    id: `memory-write-survives-${ending}`,
+    id: `fact-write-survives-${ending}`,
     suite: 'conversation',
     async run(ctx) {
       const controller = new AbortController();
@@ -138,7 +138,7 @@ export const conversation = [
             current = c;
           },
           complete: scripted(
-            call('memory_upsert', {
+            call('fact_upsert', {
               key: 'user.city',
               value: 'Hangzhou',
               evidence: 'I live in Hangzhou.',
@@ -150,22 +150,22 @@ export const conversation = [
           ),
         }),
       );
-      const before = await listMemories();
+      const before = await listFacts();
       const restored = await loadConversation(current.id);
       ctx.check(
-        'completed memory write survives final-answer interruption',
+        'completed fact write survives final-answer interruption',
         before[0]?.value === 'Hangzhou',
       );
       ctx.check(
         'interrupted conversation retains successful tool result',
         restored.status === 'interrupted' &&
           restored.messages.some(
-            (m) => m.toolName === 'memory_upsert' && !m.isError,
+            (m) => m.toolName === 'fact_upsert' && !m.isError,
           ),
       );
       ctx.check(
-        'reload does not replay memory write',
-        JSON.stringify(await listMemories()) === JSON.stringify(before),
+        'reload does not replay fact write',
+        JSON.stringify(await listFacts()) === JSON.stringify(before),
       );
     },
   })),
@@ -175,7 +175,7 @@ export const conversation = [
     async run(ctx) {
       const conversation = await savedHistory('I live in Shanghai.');
       const source = conversation.messages[0];
-      await editMemory('user.city', 'Shanghai', {
+      await editFact('user.city', 'Shanghai', {
         conversationId: conversation.id,
         messageId: source.id,
         evidence: source.content,
@@ -200,10 +200,10 @@ export const conversation = [
         useMemory: true,
         complete,
       });
-      const [memory] = await listMemories();
+      const [fact] = await listFacts();
       ctx.check(
         'existing automatic facts remain readable',
-        memory?.value === 'Shanghai' && memory.origin === 'automatic',
+        fact?.value === 'Shanghai' && fact.origin === 'automatic',
       );
       ctx.check(
         'retired jobs are not resumed or extended',
@@ -216,7 +216,7 @@ export const conversation = [
       ctx.check(
         'source deletion also clears legacy snapshots',
         (await db.getAllAsync('SELECT * FROM memory_jobs')).length === 0 &&
-          (await listMemories()).length === 0,
+          (await listFacts()).length === 0,
       );
     },
   },

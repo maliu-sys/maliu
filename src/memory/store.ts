@@ -1,14 +1,14 @@
 import { throwIfAborted } from '../agent/timeout';
 import { getDatabase, nextOrder, writeTransaction } from '../storage/database';
-import type { Memory } from './types';
+import type { Fact } from './types';
 
-export async function listMemories(includeDeleted = false): Promise<Memory[]> {
-  return (await getDatabase()).getAllAsync<Memory>(
+export async function listFacts(includeDeleted = false): Promise<Fact[]> {
+  return (await getDatabase()).getAllAsync<Fact>(
     `SELECT * FROM memories ${includeDeleted ? '' : 'WHERE value IS NOT NULL'} ORDER BY changeOrder DESC, key`,
   );
 }
 
-export function editMemory(
+export function editFact(
   key: string,
   value: string | null,
   source?: { conversationId: string; messageId: string; evidence: string },
@@ -24,7 +24,7 @@ export function editMemory(
         source.conversationId,
       ))
     ) {
-      throw new Error('Memory source no longer exists.');
+      throw new Error('Fact source no longer exists.');
     }
     await tx.runAsync(
       `INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -33,7 +33,7 @@ export function editMemory(
       updatedAt = excluded.updatedAt, changeOrder = excluded.changeOrder, origin = excluded.origin`,
       key,
       value,
-      value ? (source?.evidence ?? 'Edited in Memory.') : '',
+      value ? (source?.evidence ?? 'Edited in Facts.') : '',
       value ? (source?.conversationId ?? null) : null,
       value ? (source?.messageId ?? null) : null,
       Date.now(),

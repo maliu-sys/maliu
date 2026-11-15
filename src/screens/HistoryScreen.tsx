@@ -93,7 +93,7 @@ export function HistoryScreen({
           'Search',
           () =>
             void perform(async () => {
-              setHits(await searchMemory(query, 'conversations'));
+              setHits(await searchMemory(query, 'history'));
               setSearched(true);
             }),
         )}
@@ -141,7 +141,7 @@ export function HistoryScreen({
               {button('Delete', () =>
                 Alert.alert(
                   'Delete conversation?',
-                  'This deletes its messages and atomic memories currently sourced from it.',
+                  'This deletes its messages and facts currently sourced from it.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     {
