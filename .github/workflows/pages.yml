@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - assets/maliu_logo.png
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml

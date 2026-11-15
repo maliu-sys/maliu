@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tasklist } from '@mdit/plugin-tasklist';
 import { defineConfig } from 'vitepress';
 
 export default defineConfig({
@@ -7,6 +8,10 @@ export default defineConfig({
   base: '/maliu/',
   outDir: '../dist/docs',
   cacheDir: '../dist/docs-cache',
+  vite: { publicDir: join(import.meta.dirname, '../../assets') },
+  head: [
+    ['link', { rel: 'icon', type: 'image/png', href: '/maliu/maliu_logo.png' }],
+  ],
   themeConfig: {
     sidebar: [
       { text: 'Home', link: '/' },
@@ -23,6 +28,7 @@ export default defineConfig({
   },
   markdown: {
     config(md) {
+      md.use(tasklist);
       md.core.ruler.before('normalize', 'devlog', (state) => {
         if (!state.src.includes('<!-- devlog -->')) return;
 
@@ -36,7 +42,9 @@ export default defineConfig({
               readFileSync(join(directory, name), 'utf8').match(
                 /^# (.+)$/m,
               )?.[1] ?? name.slice(0, -3);
-            return `- [${title}](/devlog/${name})`;
+            const week = name.match(/^week-(\d+)-/)?.[1];
+            const label = week ? `Week ${Number(week)}: ${title}` : title;
+            return `- [${label}](/devlog/${name})`;
           });
         state.src = state.src.replace('<!-- devlog -->', entries.join('\n'));
       });
