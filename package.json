@@ -13,6 +13,7 @@
     "android": "node scripts/dev.mjs build",
     "android:release": "node scripts/dev.mjs build --variant release",
     "prebuild": "expo prebuild --platform android",
+    "docs:build": "vitepress build docs",
     "test:run": "node test/run.mjs",
     "test": "node --test test/framework.test.mjs && node test/run.mjs",
     "typecheck": "tsc --noEmit",
@@ -38,6 +39,7 @@
     "eslint": "9.39.5",
     "eslint-config-expo": "58.0.4",
     "prettier": "3.9.10",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitepress": "1.6.4"
   }
 }

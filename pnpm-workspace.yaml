@@ -1,4 +1,5 @@
-# Installation needs no dependency lifecycle scripts; the resolver ships prebuilt binaries.
+# esbuild prepares the docs bundler; unrs-resolver ships prebuilt binaries.
 saveExact: true
 allowBuilds:
+  esbuild: true
   unrs-resolver: false
