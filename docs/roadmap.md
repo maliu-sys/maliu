@@ -23,6 +23,7 @@
 - [ ] Local UI Positioning: LLMs can understand the screen through only a few parts of it, not the total.
 
 ## UI
+
 - [ ] A more visual-easy UI than conversions list.
 
 ## Maintaince
@@ -30,7 +31,7 @@
 - [ ] skills for issue and PR
 - [ ] CI for release
 - [ ] Test Framework
-- [ ] AI Dev Support, such as `agent.md`
+- [x] AI Dev Support, such as `agent.md`
 - [ ] Real-World development
 - [ ] comprehensive documents
 - [ ] Benchmark for performance, intelligence and others

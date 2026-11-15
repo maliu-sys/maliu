@@ -1,6 +1,6 @@
 # Files
 
-The entry of APP is `app.tsx`.
+The entry of APP is `App.tsx`.
 
 - `src/`: APP source code
   - `screens/`: APP main UI
@@ -9,7 +9,7 @@ The entry of APP is `app.tsx`.
   - `model/`: model API adaptor
   - `tools/`: agent tool implementation
   - `memory/`: agent memory
-- `module`: Android native module
+- `modules/`: Android native modules
 - `scripts/`: build scripts
 - `test/`: testing
   - `run.mjs`: the entry of test
