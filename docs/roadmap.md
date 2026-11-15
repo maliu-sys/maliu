@@ -29,10 +29,10 @@
 ## Maintaince
 
 - [ ] skills for issue and PR
-- [ ] CI for release
+- [x] CI for release
 - [ ] Test Framework
 - [x] AI Dev Support, such as `agent.md`
 - [ ] Real-World development
 - [ ] comprehensive documents
 - [ ] Benchmark for performance, intelligence and others
-- [ ] Official Website
+- [x] Official Website
