@@ -21,6 +21,7 @@
 - [ ] Sessionless: refer to https://github.com/AFK-surf/Comma
 - [ ] Plugin Dev APIs
 - [ ] Local UI Positioning: LLMs can understand the screen through only a few parts of it, not the total.
+- [ ] API usage-efficient
 
 ## UI
 
