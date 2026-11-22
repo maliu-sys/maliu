@@ -11,6 +11,7 @@ import { useTheme } from './theme';
 
 const destinations = [
   { id: 'chat', label: 'Chat' },
+  { id: 'browser', label: 'Browser' },
   { id: 'history', label: 'History' },
   { id: 'facts', label: 'Facts' },
   { id: 'tools', label: 'Tools' },

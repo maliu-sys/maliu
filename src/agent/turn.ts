@@ -6,11 +6,12 @@ import type {
   Message,
   ModelSettings,
   ToolDefinition,
+  ToolEnv,
 } from './types';
 import { saveConversation } from '../storage/conversations';
-import { bindToolContext, tools as registeredTools } from '../tools/index';
+import { bindToolEnv, tools as registeredTools } from '../tools/index';
 
-// truncate messages of older turns when exceeding `maxChars`
+// Keep the latest turn intact, including a browser task waiting for handoff.
 export function recentHistory(
   messages: Message[],
   maxChars = 24000,
@@ -19,7 +20,7 @@ export function recentHistory(
   let chars = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     chars += JSON.stringify(messages[i]).length;
-    if (chars > maxChars) break;
+    if (chars > maxChars && start < messages.length) break;
     if (messages[i]!.role === 'user') start = i;
   }
   return messages.slice(start);
@@ -38,6 +39,7 @@ export async function runTurn({
   onConversation,
   complete,
   context = '',
+  browser,
 }: {
   conversation: Conversation;
   prompt: string;
@@ -49,6 +51,7 @@ export async function runTurn({
   onConversation: (conversation: Conversation) => void;
   complete?: ModelCall;
   context?: string;
+  browser?: ToolEnv['browser'];
 }): Promise<Conversation> {
   let current = conversation;
   let completed = false;
@@ -60,16 +63,17 @@ export async function runTurn({
       0,
       current.messages.length - history.length,
     );
-    await runAgent({
+    const result = await runAgent({
       history,
       prompt,
       settings,
       signal,
       complete,
-      tools: bindToolContext(
+      tools: bindToolEnv(
         {
           conversationId: current.id,
-          currentUser: () =>
+          browser,
+          currentUserMessage: () =>
             current.messages.findLast((m) => m.role === 'user')!,
         },
         tools,
@@ -77,11 +81,11 @@ export async function runTurn({
       systemPrompt: buildSystemPrompt(context),
       onMessages: (messages) => onMessages([...archived, ...messages]),
       onStatus,
-      checkpoint: async (messages) => {
+      checkpoint: async (messages, status = 'running') => {
         current = {
           ...current,
           messages: [...archived, ...messages],
-          status: 'running',
+          status,
           updatedAt: Date.now(),
         };
         onConversation(current);
@@ -89,12 +93,12 @@ export async function runTurn({
       },
     });
     completed = true;
-    current = { ...current, status: 'idle' };
+    current = { ...current, status: result === 'waiting' ? 'waiting' : 'idle' };
     await saveConversation(current);
     succeeded = true;
     return current;
   } finally {
-    current = { ...current, status: completed ? 'idle' : 'interrupted' };
+    if (!completed) current = { ...current, status: 'interrupted' };
     onConversation(current);
     if (!succeeded) await saveConversation(current);
   }

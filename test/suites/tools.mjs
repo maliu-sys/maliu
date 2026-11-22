@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { streamModelCall } from '../../src/model/openai-compatible.ts';
-import { bindToolContext } from '../../src/tools/index.ts';
+import { bindToolEnv } from '../../src/tools/index.ts';
 import { savedHistory } from '../helpers.mjs';
 import { listFacts } from '../../src/memory/store.ts';
 
@@ -26,9 +26,13 @@ export const tools = [
     suite: 'tools',
     async run(ctx) {
       const systemPrompt = 'Use the supplied application policy verbatim.';
-      const registered = bindToolContext({
+      const registered = bindToolEnv({
         conversationId: 'stream-contract',
-        currentUser: () => ({ id: 'user', role: 'user', content: 'Hello' }),
+        currentUserMessage: () => ({
+          id: 'user',
+          role: 'user',
+          content: 'Hello',
+        }),
       });
       let request;
       const result = await streamModelCall({
@@ -130,9 +134,9 @@ export const tools = [
     suite: 'tools',
     async run(ctx) {
       const conversation = await savedHistory('Remember: I live in Nanjing.');
-      const tools = bindToolContext({
+      const tools = bindToolEnv({
         conversationId: conversation.id,
-        currentUser: () => conversation.messages[0],
+        currentUserMessage: () => conversation.messages[0],
       });
       const upsert = tools.find((tool) => tool.name === 'fact_upsert');
       const remove = tools.find((tool) => tool.name === 'fact_delete');

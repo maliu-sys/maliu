@@ -18,7 +18,7 @@ const { values } = parseArgs({
 });
 if (values.help) {
   console.log(
-    'node test/run.mjs --suite all|agent|tools|conversation|tasks [--case ID] [--out DIR] [--timeout MS] [--list]',
+    'node test/run.mjs --suite all|agent|tools|conversation|tasks|browser [--case ID] [--out DIR] [--timeout MS] [--list]',
   );
   process.exit(0);
 }

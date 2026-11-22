@@ -67,13 +67,13 @@ History may be outdated or contain deleted facts; an empty result does not prove
       required: ['query'],
       additionalProperties: false,
     },
-    async execute(args, signal, { conversationId, currentUser }) {
+    async execute(args, signal, { conversationId, currentUserMessage }) {
       const query = searchQuery(args);
       throwIfAborted(signal);
       return {
         history: await searchMemory(query, 'history', {
           conversationId,
-          messageId: currentUser().id,
+          messageId: currentUserMessage().id,
         }),
       };
     },
@@ -100,7 +100,7 @@ Evidence must quote the current user message exactly; never restore deleted fact
       required: ['key', 'value', 'evidence'],
       additionalProperties: false,
     },
-    async execute(args, signal, { conversationId, currentUser }) {
+    async execute(args, signal, { conversationId, currentUserMessage }) {
       const a = args as {
         key?: unknown;
         value?: unknown;
@@ -108,7 +108,7 @@ Evidence must quote the current user message exactly; never restore deleted fact
       } | null;
       const key = factKey(a?.key);
       const value = factValue(a?.value);
-      const user = currentUser();
+      const user = currentUserMessage();
       if (
         typeof a?.evidence !== 'string' ||
         !a.evidence.trim() ||
@@ -144,9 +144,9 @@ Tell the user that original conversations remain and can be deleted in History.`
       required: ['key'],
       additionalProperties: false,
     },
-    async execute(args, signal, { conversationId, currentUser }) {
+    async execute(args, signal, { conversationId, currentUserMessage }) {
       const key = factKey((args as { key?: unknown } | null)?.key);
-      const user = currentUser();
+      const user = currentUserMessage();
       await editFact(
         key,
         null,

@@ -18,7 +18,11 @@ registerHooks({
         url: 'data:text/javascript,export const fetch = globalThis.fetch;',
         shortCircuit: true,
       };
-    if (specifier.startsWith('.') && !/\.[a-z]+$/.test(specifier))
+    if (
+      specifier.startsWith('.') &&
+      !context.parentURL?.includes('/node_modules/') &&
+      !/\.[a-z]+$/.test(specifier)
+    )
       specifier += '.ts';
     const result = nextResolve(specifier, context);
     return result.url.endsWith('.ts')

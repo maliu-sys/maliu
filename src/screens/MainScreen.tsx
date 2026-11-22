@@ -3,6 +3,8 @@ import {
   AppState, // indicate the APP state, 'active'(foreground), 'background', 'inactive'
   BackHandler,
   Keyboard,
+  Pressable,
+  Text,
   View,
 } from 'react-native';
 import { runTurn } from '../agent/turn';
@@ -24,6 +26,9 @@ import { SettingsScreen } from './SettingsScreen';
 import { FactsScreen } from './FactsScreen';
 import { HistoryScreen } from './HistoryScreen';
 import { ToolsScreen } from './ToolsScreen';
+import { BrowserScreen } from './BrowserScreen';
+import { BrowserController } from '../browser/controller';
+import { useTheme } from '../components/theme';
 
 export function MainScreen({
   initialConversation,
@@ -32,12 +37,17 @@ export function MainScreen({
   initialConversation: Conversation;
   initialSettings: ModelSettings;
 }) {
+  const theme = useTheme();
+  const [browser] = useState(() => new BrowserController());
   const [settings, setSettings] = useState(initialSettings);
   const [screen, setScreen] = useState<Screen>('chat');
   const [menuOpen, setMenuOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState(initialConversation.messages);
   const [conversationId, setConversationId] = useState(initialConversation.id);
+  const [conversationStatus, setConversationStatus] = useState(
+    initialConversation.status,
+  );
   // is the agent in `runTurn()`?
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(
@@ -98,18 +108,23 @@ export function MainScreen({
     setError('');
     setStatus('Starting…');
     try {
-      await runTurn({
+      const result = await runTurn({
         conversation: conversation.current,
         prompt,
         settings,
+        browser,
         signal: run.signal,
         onMessages: publish,
         onStatus: setStatus,
         onConversation: (next) => {
           conversation.current = next;
+          setConversationStatus(next.status);
         },
       });
-      setStatus('');
+      if (result.status === 'waiting') {
+        setStatus('Waiting for you in the browser.');
+        setScreen('browser');
+      } else setStatus('');
     } catch (e) {
       if (run.signal.aborted) setStatus(errorMessage(run.signal.reason));
       else {
@@ -127,6 +142,7 @@ export function MainScreen({
     if (conversation.current.id !== next.id) setDraft('');
     conversation.current = next;
     setConversationId(next.id);
+    setConversationStatus(next.status);
     setMessages(next.messages);
     setStatus(
       next.status === 'interrupted' ? 'Previous run was interrupted.' : '',
@@ -157,6 +173,16 @@ export function MainScreen({
     setMenuOpen(true);
   };
   const backToChat = () => setScreen('chat');
+  const handoffMessage =
+    conversationStatus === 'waiting'
+      ? messages.findLast(
+          (message) =>
+            message.toolName === 'browser_handoff' && !message.isError,
+        )
+      : undefined;
+  const handoff = handoffMessage
+    ? (JSON.parse(handoffMessage.content) as { url: string; reason: string })
+    : undefined;
   let content;
   switch (screen) {
     case 'settings':
@@ -204,6 +230,43 @@ export function MainScreen({
   }
   return (
     <View style={{ flex: 1 }}>
+      {/* Preserve a laid-out WebView when chat is visible, including its login session. */}
+      <View
+        pointerEvents={screen === 'browser' ? 'auto' : 'none'}
+        accessibilityElementsHidden={screen !== 'browser'}
+        importantForAccessibility={
+          screen === 'browser' ? 'auto' : 'no-hide-descendants'
+        }
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          opacity: screen === 'browser' ? 1 : 0,
+        }}
+      >
+        <BrowserScreen
+          browser={browser}
+          busy={busy}
+          handoff={handoff}
+          onMenu={openMenu}
+          onBack={backToChat}
+          onContinue={() => {
+            setScreen('chat');
+            void send(
+              'I have finished the browser handoff. Read the current page and continue the task.',
+            );
+          }}
+          onStop={() =>
+            controller.current?.abort(
+              new Error(
+                'Browser control handed to you. Send a message when ready to continue.',
+              ),
+            )
+          }
+        />
+      </View>
       {/* Keep the active chat mounted so navigation preserves its reading position. */}
       <View
         style={{ flex: 1, display: screen === 'chat' ? 'flex' : 'none' }}
@@ -227,6 +290,20 @@ export function MainScreen({
           onSend={(text) => void send(text)}
           onStop={() => controller.current?.abort(new Error('Stopped.'))}
         />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setScreen('browser')}
+          style={{
+            minHeight: 44,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: theme.surface,
+          }}
+        >
+          <Text style={{ color: theme.accent }}>
+            {handoff ? 'Continue in browser' : 'Open browser'}
+          </Text>
+        </Pressable>
       </View>
       {content}
       <NavigationDrawer

@@ -20,9 +20,9 @@ export const agent = [
             execute: async (
               { id },
               signal,
-              { conversationId, currentUser },
+              { conversationId, currentUserMessage },
             ) => {
-              const source = currentUser();
+              const source = currentUserMessage();
               const saved = await loadConversation(conversationId);
               ctx.check(
                 'ordinary tool receives the persisted current-user source',
@@ -115,7 +115,7 @@ export const agent = [
     async run(ctx) {
       let current;
       const complete = scripted(
-        ...Array.from({ length: 8 }, () => call('missing', {})),
+        ...Array.from({ length: 16 }, () => call('missing', {})),
       );
       await assert.rejects(
         turn(ctx, {
@@ -124,9 +124,9 @@ export const agent = [
             current = c;
           },
         }),
-        /8 model turns/,
+        /16 model turns/,
       );
-      ctx.check('bounded model loop', complete.calls === 8);
+      ctx.check('bounded model loop', complete.calls === 16);
       ctx.check(
         'failure status persisted',
         (await loadConversation(current.id)).status === 'interrupted',

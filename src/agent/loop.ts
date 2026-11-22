@@ -10,7 +10,10 @@ import {
 import { throwIfAborted, withTimeout } from './timeout';
 
 // Close outstanding calls after an interrupted run; never replay a device action.
-export function closePendingTools(messages: Message[]): Message[] {
+export function closePendingTools(
+  messages: Message[],
+  reason = 'Execution interrupted. The result is unknown; this action was not retried.',
+): Message[] {
   return messages.flatMap((message, index) => {
     const results = new Set<string>();
     for (
@@ -30,8 +33,7 @@ export function closePendingTools(messages: Message[]): Message[] {
           createdAt: Date.now(),
           role: 'tool',
           content: JSON.stringify({
-            error:
-              'Execution interrupted. The result is unknown; this action was not retried.',
+            error: reason,
           }),
           tool_call_id: call.id,
           toolName: call.function.name,
@@ -51,6 +53,7 @@ export async function runAgent({
   onStatus,
   checkpoint,
   systemPrompt,
+  maxTurns = 16,
   complete = streamModelCall,
 }: {
   history: Message[];
@@ -60,22 +63,26 @@ export async function runAgent({
   signal: AbortSignal;
   onMessages: (messages: Message[]) => void;
   onStatus: (status: string) => void;
-  checkpoint: (messages: Message[]) => Promise<void>; // save to sql
+  checkpoint: (
+    messages: Message[],
+    status?: 'running' | 'waiting',
+  ) => Promise<void>;
   systemPrompt: string;
+  maxTurns?: number;
   complete?: ModelCall;
-}): Promise<void> {
+}): Promise<'completed' | 'waiting'> {
   let messages: Message[] = [
     ...closePendingTools(history),
     { id: newId(), createdAt: Date.now(), role: 'user', content: prompt },
   ];
   let draft: Message | undefined;
-  const publish = async () => {
+  const publish = async (status: 'running' | 'waiting' = 'running') => {
     onMessages([...messages]);
-    await checkpoint([...messages]);
+    await checkpoint([...messages], status);
   };
   try {
     await publish();
-    for (let turn = 0; turn < 8; turn++) {
+    for (let turn = 0; turn < maxTurns; turn++) {
       // call the model API
       throwIfAborted(signal);
       onStatus('Thinking…');
@@ -109,7 +116,7 @@ export async function runAgent({
       throwIfAborted(signal);
 
       // no tool calls means the task is finished, then break.
-      if (!answer.tool_calls?.length) return;
+      if (!answer.tool_calls?.length) return 'completed';
 
       // processing the tool calls
       for (const call of answer.tool_calls) {
@@ -117,6 +124,7 @@ export async function runAgent({
         onStatus(`Running ${call.function.name}…`);
         let content: string;
         let isError = false;
+        let pause = false;
         try {
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
@@ -126,6 +134,7 @@ export async function runAgent({
             tool.execute(args, toolSignal),
           );
           content = JSON.stringify(output) ?? 'null';
+          pause = tool.pausesAgent === true;
         } catch (error) {
           isError = true;
           throwIfAborted(signal);
@@ -144,10 +153,21 @@ export async function runAgent({
             isError,
           },
         ];
+        if (pause) {
+          messages = closePendingTools(
+            messages,
+            'Not executed: waiting for the user. Observe the page and request new actions after they return.',
+          );
+          await publish('waiting');
+          throwIfAborted(signal);
+          return 'waiting';
+        }
         await publish();
       }
     }
-    throw new Error('Stopped after 8 model turns. Send a message to continue.');
+    throw new Error(
+      `Stopped after ${maxTurns} model turns. Send a message to continue.`,
+    );
   } catch (error) {
     if (draft?.content) messages = [...messages, draft];
     messages = closePendingTools(messages);

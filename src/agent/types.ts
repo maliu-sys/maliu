@@ -1,3 +1,5 @@
+import type { BrowserController } from '../browser/controller';
+
 export type ToolCall = {
   id: string;
   type: 'function';
@@ -20,20 +22,25 @@ export type Tool = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  pausesAgent?: boolean;
   execute: (args: unknown, signal: AbortSignal) => Promise<unknown>;
 };
 
-export type ToolContext = {
+// some tools need environment information in addition to tool arguments.
+// the normal arguments are provided by the LLM.
+// the environment is provided by the agent.
+export type ToolEnv = {
   conversationId: string;
   // Resolved at execution, after the current user message has been persisted.
-  currentUser: () => Message;
+  currentUserMessage: () => Message;
+  browser?: BrowserController;
 };
 
 export type ToolDefinition = Omit<Tool, 'execute'> & {
   execute: (
     args: unknown,
     signal: AbortSignal,
-    context: ToolContext,
+    env: ToolEnv,
   ) => Promise<unknown>;
 };
 
@@ -59,7 +66,7 @@ export type Conversation = {
   id: string;
   title: string;
   updatedAt: number;
-  status: 'idle' | 'running' | 'interrupted';
+  status: 'idle' | 'running' | 'interrupted' | 'waiting';
   messages: Message[];
 };
 
