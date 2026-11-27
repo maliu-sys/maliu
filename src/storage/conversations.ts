@@ -121,14 +121,6 @@ export function deleteConversation(id: string): Promise<void> {
       Date.now(),
       id,
     );
-    // Older installs can still contain retired extraction snapshots.
-    if (
-      await tx.getFirstAsync(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'memory_jobs'",
-      )
-    ) {
-      await tx.runAsync('DELETE FROM memory_jobs WHERE conversationId = ?', id);
-    }
     await tx.runAsync('DELETE FROM messages WHERE conversationId = ?', id);
     await tx.runAsync('DELETE FROM conversations WHERE id = ?', id);
     await tx.runAsync(

@@ -11,10 +11,7 @@ async function open() {
 }
 
 export function getDatabase() {
-  database ??= open().catch((error: unknown) => {
-    database = undefined;
-    throw error;
-  });
+  database ??= open();
   return database;
 }
 
