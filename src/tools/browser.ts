@@ -124,17 +124,17 @@ After an action times out or navigation interrupts it, inspect the current page 
   ),
   tool(
     'click',
-    'Click an element ref and return the resulting snapshot. Take another snapshot if content is still loading.',
+    'Tap an element ref like a finger and return the resulting snapshot. Take another snapshot if content is still loading.',
     ['ref'],
   ),
   tool(
     'fill',
-    'Replace a text field using its ref and return the resulting snapshot. Use browser_handoff for login credentials or verification codes.',
+    'Tap a text field and type over its contents like the keyboard, then return the resulting snapshot; suggestion lists may appear. Use browser_handoff for login credentials or verification codes.',
     ['ref', 'text'],
   ),
   tool(
     'press',
-    'Send Enter or Escape to the focused element and return the resulting snapshot. Scripted keys may not work on all sites; check the snapshot.',
+    'Press Enter or Escape on the focused element and return the resulting snapshot.',
     ['key'],
   ),
   tool(
@@ -147,7 +147,8 @@ After an action times out or navigation interrupts it, inspect the current page 
   tool(
     'handoff',
     `Pause this task and show the browser to the user for login, verification or an unsupported interaction. The user presses Continue when finished.
-Never ask for passwords, verification codes or cookies in chat; users complete sensitive steps directly in the browser.`,
+Never ask for passwords, verification codes or cookies in chat; users complete sensitive steps directly in the browser.
+For a QR-code sign-in, tell the user they can save the code to Photos and scan it from Photos in the site's app.`,
     ['reason'],
   ),
 ];

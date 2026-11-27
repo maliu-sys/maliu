@@ -5,7 +5,8 @@ export const browserPageScript = String.raw /* javascript */ `
     window.ReactNativeWebView.postMessage(JSON.stringify({ channel: 'maliu-browser', ready: true, userAgent: navigator.userAgent }));
     return;
   }
-  const documentId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  // A short per-document tag keeps refs cheap while rejecting refs from another page.
+  const documentId = Math.random().toString(36).slice(2, 6);
   let nextRef = 0;
   const ids = new WeakMap();
   let elements = new Map();
@@ -33,10 +34,22 @@ export const browserPageScript = String.raw /* javascript */ `
     if (!role || el.matches('input[type="hidden"]')) return null;
     const labelledBy = (el.getAttribute('aria-labelledby') || '').split(/\s+/)
       .map(id => document.getElementById(id)?.textContent || '').join(' ');
+    // Icon-only controls often carry their meaning on an inner image or icon.
+    const icon = el.querySelector('img[alt]:not([alt=""]), svg title, [aria-label]');
     const label = el.getAttribute('aria-label') || labelledBy.trim() ||
       Array.from(el.labels || []).map(label => label.textContent).join(' ') ||
-      el.getAttribute('placeholder') || (role === 'region' ? '' : el.innerText) || el.getAttribute('title') || el.getAttribute('alt');
+      el.getAttribute('placeholder') || (role === 'region' ? '' : el.innerText) || el.getAttribute('title') || el.getAttribute('alt') ||
+      (el.matches('input[type="submit"], input[type="button"], input[type="reset"]') ? el.value : '') ||
+      icon?.getAttribute('alt') || icon?.getAttribute('aria-label') || icon?.textContent ||
+      (el.id ? '#' + el.id : el.getAttribute('name') ? 'name=' + el.getAttribute('name') : '');
     return { role, name: clean(label) };
+  };
+  // Links are followed by ref, so a short readable target is enough.
+  const shortHref = (el) => {
+    if (!/^https?:/.test(el.href)) return undefined;
+    const url = new URL(el.href);
+    const path = (url.host === location.host ? '' : url.host) + url.pathname;
+    return (path + (url.search.length > 40 ? '?…' : url.search)).slice(0, 100);
   };
   const snapshot = () => {
     const nodes = [];
@@ -53,12 +66,12 @@ export const browserPageScript = String.raw /* javascript */ `
       const info = describe(el);
       if (!info) continue;
       let ref = ids.get(el);
-      if (!ref) { ref = documentId + '-e' + (++nextRef); ids.set(el, ref); }
+      if (!ref) { ref = documentId + '-' + (++nextRef); ids.set(el, ref); }
       const node = { ref, ...info };
       if ('value' in el) node.value = sensitive(el) ? '[redacted]' : clean(el.value, 160);
       if ('checked' in el) node.checked = el.checked;
       if (el.disabled || el.getAttribute('aria-disabled') === 'true') node.disabled = true;
-      if (el.tagName === 'A') node.href = el.href.slice(0, 2000);
+      if (el.tagName === 'A') node.href = shortHref(el);
       characters += JSON.stringify(node).length;
       if (characters > 16000) break;
       current.set(ref, el);
@@ -92,40 +105,35 @@ export const browserPageScript = String.raw /* javascript */ `
     if (action === 'scroll') {
       const el = args.ref ? target(args.ref) : document.scrollingElement;
       el.scrollBy({ top: (args.direction === 'up' ? -1 : 1) * (el.clientHeight || innerHeight) * 0.8, behavior: 'instant' });
-    } else if (action === 'click') {
+      return { scrolled: true };
+    }
+    // Input itself is native (trusted); the page only validates and reports where to tap.
+    if (action === 'locate') {
       const el = interactive(args.ref);
-      el.scrollIntoView({ block: 'center' });
-      el.click();
-    } else if (action === 'fill') {
-      const el = interactive(args.ref);
-      if (sensitive(el)) throw new Error('Use browser_handoff for passwords and verification codes.');
-      el.focus();
-      if (el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea')) {
+      if (args.purpose === 'fill') {
+        if (sensitive(el)) throw new Error('Use browser_handoff for passwords and verification codes.');
+        if (!el.isContentEditable && !el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="submit"]):not([type="button"]), textarea'))
+          throw new Error('This element is not a text input.');
         if (el.readOnly) throw new Error('This field is read-only.');
-        const prototype = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(prototype, 'value').set.call(el, args.text);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      } else if (el.isContentEditable) {
+      }
+      el.scrollIntoView({ block: 'center' });
+      const box = el.getBoundingClientRect();
+      return { x: box.left + box.width / 2 - visualViewport.offsetLeft,
+        y: box.top + box.height / 2 - visualViewport.offsetTop, viewportWidth: visualViewport.width };
+    }
+    // The native text commit replaces the selection, like typing over selected text.
+    if (action === 'select') {
+      const el = target(args.ref);
+      el.focus();
+      if (el.isContentEditable) {
         const range = document.createRange();
         range.selectNodeContents(el);
-        const selection = getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        if (!document.execCommand(args.text ? 'insertText' : 'delete', false, args.text))
-          throw new Error('This editor did not accept the input. Use browser_handoff.');
-      } else throw new Error('This element is not a text input.');
-    } else if (action === 'press') {
-      const el = document.activeElement;
-      const options = { key: args.key, code: args.key, bubbles: true, cancelable: true,
-        keyCode: args.key === 'Enter' ? 13 : 27, which: args.key === 'Enter' ? 13 : 27 };
-      let proceed = el.dispatchEvent(new KeyboardEvent('keydown', options));
-      if (proceed && args.key === 'Enter') proceed = el.dispatchEvent(new KeyboardEvent('keypress', { ...options, charCode: 13 }));
-      el.dispatchEvent(new KeyboardEvent('keyup', options));
-      if (proceed && args.key === 'Enter' && el.form && el.tagName !== 'TEXTAREA') el.form.requestSubmit();
-    } else throw new Error('Unknown browser action.');
-    return { dispatched: true, url: location.href,
-      note: 'Scripted input is not accepted by every website; check the snapshot.' };
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+      } else el.select();
+      return { selected: true };
+    }
+    throw new Error('Unknown browser action.');
   };
   window.__maliuBrowser = {
     run(id, action, args) {

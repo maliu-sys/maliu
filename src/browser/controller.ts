@@ -7,16 +7,29 @@ export type BrowserArgs = {
   url?: string;
   ref?: string;
   text?: string;
-  key?: string;
+  key?: 'Enter' | 'Escape';
   direction?: string;
   offset?: number;
 };
+// CSS pixels inside the visual viewport, as reported by the page.
+export type TapPoint = { x: number; y: number; viewportWidth: number };
 type Driver = {
   navigate: (url: string) => void;
   injectJavaScript: (script: string) => void;
   goBack: () => void;
   stopLoading: () => void;
+  // Native input, so pages receive trusted events.
+  tap: (point: TapPoint) => Promise<void>;
+  insertText: (text: string) => Promise<void>;
+  pressKey: (key: 'Enter' | 'Escape') => Promise<void>;
 };
+// Input is handled asynchronously by the page; give it a moment before observing.
+const inputSettleMs = 400;
+// Without a mobile viewport (always, in desktop mode) Chromium holds a tap's click for the
+// 300 ms double-tap timeout. Typing before it is lost when the page's click handler runs,
+// and a snapshot before it misses the navigation the click starts.
+const tapClickDelayMs = 400;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function browserUrl(value: string): string {
   const url = new URL(value);
@@ -129,9 +142,10 @@ export class BrowserController {
       finish();
     });
   }
+  // Actions implemented by page-script.ts.
   private request(
-    action: BrowserAction,
-    args: BrowserArgs,
+    action: 'snapshot' | 'read' | 'scroll' | 'locate' | 'select',
+    args: BrowserArgs & { purpose?: BrowserAction },
     signal: AbortSignal,
   ) {
     throwIfAborted(signal);
@@ -183,10 +197,12 @@ export class BrowserController {
     signal.addEventListener('abort', stop, { once: true });
     try {
       throwIfAborted(signal);
-      const finish = (result: unknown, snapshot?: unknown) => ({
-        result,
-        snapshot,
-        externalLink: this.state.externalUrl || undefined,
+      // Sites that want their app try to open it; the WebView blocks that.
+      const finish = (result: unknown) => ({
+        ...(result as object),
+        ...(this.state.externalUrl && {
+          externalApp: `The page tried to open an app (${this.state.externalUrl.split(':')[0]}:) and was blocked. Continue on the web page, or use browser_handoff if only the app can do this.`,
+        }),
       });
       if (action === 'open') {
         if (this.state.url === 'about:blank' && !this.state.error)
@@ -205,18 +221,24 @@ export class BrowserController {
       if (action === 'snapshot') return finish(await this.snapshot(signal));
       await this.waitReady(signal);
       if (action === 'read')
-        return finish(await this.request(action, args, signal));
-      let result: unknown;
-      try {
-        result = await this.request(action, args, signal);
-      } catch (error) {
-        if (this.ready || this.state.error || signal.aborted) throw error;
-        result = {
-          navigated: true,
-          note: 'The page navigated before the action reported back. It may or may not have taken effect; check the snapshot before repeating it.',
-        };
+        return finish(await this.request('read', args, signal));
+      if (action === 'scroll') await this.request('scroll', args, signal);
+      else if (action === 'press') await this.driver.pressKey(args.key!);
+      else {
+        const point = (await this.request(
+          'locate',
+          { ref: args.ref, purpose: action },
+          signal,
+        )) as TapPoint;
+        await this.driver.tap(point);
+        await sleep(tapClickDelayMs);
+        if (action === 'fill') {
+          await this.request('select', { ref: args.ref }, signal);
+          await this.driver.insertText(args.text!);
+        }
       }
-      return finish(result, await this.snapshot(signal));
+      await sleep(inputSettleMs);
+      return finish(await this.snapshot(signal));
     } finally {
       signal.removeEventListener('abort', stop);
       this.busy = false;

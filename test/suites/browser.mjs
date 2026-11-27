@@ -21,8 +21,11 @@ function page(html) {
     bottom: 30,
     left: 0,
     right: 200,
+    width: 200,
+    height: 30,
   });
   window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.visualViewport = { offsetLeft: 0, offsetTop: 0, width: 400 };
   Object.defineProperty(window.HTMLElement.prototype, 'innerText', {
     get() {
       return this.textContent;
@@ -74,6 +77,13 @@ export const browser = [
         );
         assert.ok(JSON.stringify(snapshot).length < 17000);
         assert.equal(snapshot.truncated, true);
+        assert.ok(
+          snapshot.elements.every(
+            (node) =>
+              !node.href ||
+              node.href === '/article/' + node.name.slice(8) + '?…',
+          ),
+        );
         delete later.innerText;
         later.getBoundingClientRect = () => ({
           top: 0,
@@ -100,64 +110,44 @@ export const browser = [
     suite: 'browser',
     async run(ctx) {
       const doc = page(`<main><h1>Search</h1><label for="query">Query</label>
-        <input id="query"><input type="password" aria-label="Password" value="secret">
+        <input id="query" value="old"><input type="password" aria-label="Password" value="secret">
         <button id="search">Search</button><button hidden>Hidden</button>
-        <a href="/article" target="_blank">Article</a></main>`);
+        <a href="/article" target="_blank">Article</a>
+        <a href="https://other.example/home?a=1"><img alt="Home"></a><input id="kw"></main>`);
       try {
         const snapshot = doc.run('snapshot');
-        assert.equal(
-          snapshot.elements.find((e) => e.name === 'Password').value,
-          '[redacted]',
-        );
+        const named = (name) => snapshot.elements.find((e) => e.name === name);
+        assert.equal(named('Password').value, '[redacted]');
         assert.ok(!snapshot.elements.some((e) => e.name === 'Hidden'));
-        assert.equal(
-          snapshot.elements.find((e) => e.name === 'Article').href,
-          'https://example.com/article',
-        );
-        ctx.check('snapshot labels, links and credential redaction', true);
-
-        const input = doc.window.document.querySelector('#query');
-        const setter = Object.getOwnPropertyDescriptor(
-          doc.window.HTMLInputElement.prototype,
-          'value',
-        );
-        let frameworkValue = '';
-        // A controlled field tracks writes through its instance setter (as React does).
-        Object.defineProperty(input, 'value', {
-          get() {
-            return setter.get.call(this);
-          },
-          set(value) {
-            frameworkValue = value;
-            setter.set.call(this, value);
-          },
-        });
-        let changed = false;
-        input.addEventListener('input', () => {
-          if (input.value !== frameworkValue) {
-            changed = true;
-            frameworkValue = input.value;
-          }
-        });
-        doc.run('fill', {
-          ref: snapshot.elements.find((e) => e.name === 'Query').ref,
-          text: '杭州徒步',
-        });
-        assert.equal(frameworkValue, '杭州徒步');
-        assert.equal(changed, true);
+        assert.equal(named('Article').href, '/article');
+        assert.equal(named('Home').href, 'other.example/home?a=1');
+        assert.equal(named('#kw').role, 'textbox');
         ctx.check(
-          'fill notifies a controlled field rather than only changing the DOM',
+          'snapshot labels, short links, name fallbacks and credential redaction',
           true,
         );
 
-        let clicks = 0;
+        assert.deepEqual(
+          doc.run('locate', { ref: named('Query').ref, purpose: 'fill' }),
+          { x: 100, y: 15, viewportWidth: 400 },
+        );
+        const input = doc.window.document.querySelector('#query');
+        doc.run('select', { ref: named('Query').ref });
+        assert.equal(doc.window.document.activeElement, input);
+        assert.deepEqual([input.selectionStart, input.selectionEnd], [0, 3]);
+        ctx.check(
+          'fill locates the field and selects its text for native typing',
+          true,
+        );
+
         const button = doc.window.document.querySelector('#search');
-        button.addEventListener('click', () => clicks++);
         const ref = snapshot.elements.find((e) => e.role === 'button').ref;
-        doc.run('click', { ref });
+        doc.run('locate', { ref, purpose: 'click' });
         button.replaceWith(button.cloneNode(true));
-        assert.throws(() => doc.run('click', { ref }), /Stale element/);
-        assert.equal(clicks, 1);
+        assert.throws(
+          () => doc.run('locate', { ref, purpose: 'click' }),
+          /Stale element/,
+        );
         const next = doc.run('snapshot');
         assert.notEqual(
           next.elements.find((e) => e.role === 'button').ref,
@@ -169,9 +159,9 @@ export const browser = [
         );
         assert.throws(
           () =>
-            doc.run('fill', {
+            doc.run('locate', {
               ref: next.elements.find((e) => e.name === 'Password').ref,
-              text: 'x',
+              purpose: 'fill',
             }),
           /handoff/,
         );
@@ -199,7 +189,10 @@ export const browser = [
         );
         const ref = first.run('snapshot').elements[0].ref;
         second.run('snapshot');
-        assert.throws(() => second.run('click', { ref }), /Stale element/);
+        assert.throws(
+          () => second.run('locate', { ref, purpose: 'click' }),
+          /Stale element/,
+        );
         first.window.eval(browserPageScript);
         assert.equal(first.messages.at(-1).ready, true);
         ctx.check(
@@ -238,7 +231,7 @@ export const browser = [
       );
       try {
         assert.equal(
-          (await controller.execute('snapshot', {}, ctx.signal)).result.elements
+          (await controller.execute('snapshot', {}, ctx.signal)).elements
             .length,
           1,
         );
@@ -311,13 +304,27 @@ export const browser = [
     },
   },
   {
-    id: 'action-returns-snapshot',
+    id: 'native-input-actions',
     suite: 'browser',
     async run(ctx) {
       const controller = new BrowserController();
       const doc = page(
-        '<button>Stay</button><a id="leave" href="/next">Leave</a>',
+        '<button>Stay</button><a id="leave" href="/next">Leave</a><input aria-label="City" value="old">',
       );
+      const { document } = doc.window;
+      // Distinct rows let the fake native tap find its target by coordinates.
+      const rows = [...document.querySelectorAll('button, a, input')];
+      rows.forEach((el, i) => {
+        el.getBoundingClientRect = () => ({
+          top: i * 40,
+          bottom: i * 40 + 30,
+          left: 0,
+          right: 200,
+          width: 200,
+          height: 30,
+        });
+      });
+      const calls = [];
       doc.window.ReactNativeWebView.postMessage = (raw) =>
         controller.receive(raw);
       controller.attach({
@@ -325,48 +332,84 @@ export const browser = [
         injectJavaScript: (script) => doc.window.eval(script),
         goBack: () => {},
         stopLoading: () => {},
+        async tap(point) {
+          calls.push(['tap', point]);
+          rows
+            .find((el) => el.getBoundingClientRect().top + 15 === point.y)
+            .click();
+        },
+        // Like an IME commit: replace the selection and notify the page.
+        async insertText(text) {
+          calls.push(['insertText', text]);
+          const el = document.activeElement;
+          el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
+          el.dispatchEvent(
+            new doc.window.InputEvent('input', { bubbles: true }),
+          );
+        },
+        async pressKey(key) {
+          calls.push(['pressKey', key]);
+        },
       });
       controller.update({ url: 'https://example.com/' });
       // Re-running the page script repeats the readiness handshake.
       doc.window.eval(browserPageScript);
       try {
-        const { result: snapshot } = await controller.execute(
-          'snapshot',
-          {},
-          ctx.signal,
-        );
+        const snapshot = await controller.execute('snapshot', {}, ctx.signal);
         const ref = (name) =>
           snapshot.elements.find((e) => e.name === name).ref;
+        let clicks = 0;
+        rows[0].addEventListener('click', () => clicks++);
         const clicked = await controller.execute(
           'click',
           { ref: ref('Stay') },
           ctx.signal,
         );
         ctx.check(
-          'an action returns its result with a fresh snapshot',
-          clicked.result.dispatched === true &&
-            clicked.snapshot.elements.length === 2,
+          'click taps the element centre natively and returns a fresh snapshot',
+          clicks === 1 &&
+            calls[0][1].y === 15 &&
+            calls[0][1].viewportWidth === 400 &&
+            clicked.elements.length === 3,
+          { calls },
         );
 
-        doc.window.document
-          .querySelector('#leave')
-          .addEventListener('click', (event) => {
-            event.preventDefault();
-            controller.loadStarted();
-          });
-        const leaving = controller.execute(
+        const filled = await controller.execute(
+          'fill',
+          { ref: ref('City'), text: '杭州' },
+          ctx.signal,
+        );
+        await controller.execute('press', { key: 'Enter' }, ctx.signal);
+        ctx.check(
+          'fill taps, selects and types over the old text, then press sends a native key',
+          filled.elements.find((e) => e.name === 'City').value === '杭州' &&
+            JSON.stringify(calls.slice(1).map(([name]) => name)) ===
+              JSON.stringify(['tap', 'insertText', 'pressKey']) &&
+            calls.at(-1)[1] === 'Enter',
+          { calls },
+        );
+
+        rows[1].addEventListener('click', (event) => {
+          event.preventDefault();
+          controller.loadStarted();
+          setTimeout(() => doc.window.eval(browserPageScript), 50);
+        });
+        controller.update({ externalUrl: 'tbopen://item?id=1' });
+        const left = await controller.execute(
           'click',
           { ref: ref('Leave') },
           ctx.signal,
         );
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        doc.window.eval(browserPageScript);
-        const left = await leaving;
         ctx.check(
-          'navigation during an action returns the new page without claiming success',
-          left.result.navigated === true &&
-            left.result.dispatched === undefined &&
-            left.snapshot.elements.length === 2,
+          'navigation caused by an action returns the next page',
+          left.elements.length === 3,
+        );
+        controller.update({ externalUrl: 'tbopen://item?id=1' });
+        ctx.check(
+          'blocked app links are reported to the model',
+          /tbopen:/.test(
+            (await controller.execute('snapshot', {}, ctx.signal)).externalApp,
+          ),
         );
       } finally {
         controller.attach(undefined);

@@ -4,9 +4,11 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentRef,
 } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Linking,
   Pressable,
   StyleSheet,
@@ -14,8 +16,10 @@ import {
   Text,
   TextInput,
   View,
+  findNodeHandle,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { BrowserInput } from '../../modules/browser-input/src/index';
 import {
   BrowserController,
   browserUrl,
@@ -48,11 +52,13 @@ export function BrowserScreen({
   const theme = useTheme();
   const state = useSyncExternalStore(browser.subscribe, browser.getSnapshot);
   const view = useRef<WebView<unknown> | null>(null);
+  const host = useRef<ComponentRef<typeof View> | null>(null);
   const [source, setSource] = useState({ uri: 'about:blank' });
   const sourceUrl = useRef(source.uri);
   const [address, setAddress] = useState('');
   const [desktop, setDesktop] = useState(true);
   const [error, setError] = useState('');
+  const [qrSaved, setQrSaved] = useState(false);
   const [working, setWorking] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const disabled = busy || working;
@@ -79,6 +85,8 @@ export function BrowserScreen({
   const attach = useCallback(
     (native: WebView<unknown> | null) => {
       view.current = native;
+      // The WebView ref hides its native view; native input targets the host View around it.
+      const tag = () => findNodeHandle(host.current)!;
       browser.attach(
         native
           ? {
@@ -87,6 +95,10 @@ export function BrowserScreen({
               // Native back can skip history entries created without a user gesture.
               goBack: () => native.injectJavaScript('history.back(); true;'),
               stopLoading: () => native.stopLoading(),
+              tap: ({ x, y, viewportWidth }) =>
+                BrowserInput.tap(tag(), x, y, viewportWidth),
+              insertText: (text) => BrowserInput.insertText(tag(), text),
+              pressKey: (key) => BrowserInput.pressKey(tag(), key),
             }
           : undefined,
       );
@@ -94,6 +106,13 @@ export function BrowserScreen({
     [browser, navigate],
   );
   useEffect(() => () => operation.current?.abort(), []);
+  useEffect(() => {
+    // Keep sign-ins when Android kills the app in the background.
+    const listener = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') void BrowserInput.flushCookies();
+    });
+    return () => listener.remove();
+  }, []);
   useEffect(() => {
     // The updated UA prop is committed before reloading the current document.
     if (browser.getSnapshot().url !== 'about:blank') view.current?.reload();
@@ -123,6 +142,15 @@ export function BrowserScreen({
       browser.loadStarted();
       navigate(url);
     } else browser.update({ externalUrl: url });
+  };
+  // A QR code cannot be scanned on the phone that shows it; the site's app can scan it from Photos.
+  const saveQr = async () => {
+    try {
+      await BrowserInput.saveToPhotos(findNodeHandle(host.current)!);
+      setQrSaved(true);
+    } catch (error) {
+      setError(errorMessage(error));
+    }
   };
   const openApp = async () => {
     try {
@@ -219,13 +247,27 @@ export function BrowserScreen({
               />
             )}
             <BrowserButton
+              label="Save QR to Photos"
+              disabled={disabled || state.url === 'about:blank'}
+              onPress={() => void saveQr()}
+            />
+            <BrowserButton
               label="Continue"
               disabled={
                 disabled || state.loading || state.url === 'about:blank'
               }
-              onPress={onContinue}
+              onPress={() => {
+                void BrowserInput.flushCookies();
+                onContinue();
+              }}
             />
           </View>
+          {qrSaved && (
+            <Text style={{ color: theme.muted }}>
+              Saved to Photos. In the site&apos;s app, open its scanner and pick
+              this image from Photos, then come back and press Continue.
+            </Text>
+          )}
         </View>
       )}
       {busy && (
@@ -264,7 +306,12 @@ export function BrowserScreen({
           style={{ padding: 4 }}
         />
       )}
-      <View style={{ flex: 1 }} pointerEvents={busy ? 'none' : 'auto'}>
+      <View
+        ref={host}
+        collapsable={false}
+        style={{ flex: 1 }}
+        pointerEvents={busy ? 'none' : 'auto'}
+      >
         <WebView<unknown>
           ref={attach}
           source={source}
