@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import type { Message } from '../agent/types';
 import { ToolCallCard } from './ToolCallCard';
+import { Markdown } from './Markdown';
 import { useTheme } from './theme';
 
 const MessageRow = memo(
@@ -37,11 +38,14 @@ const MessageRow = memo(
         <Text style={[styles.label, { color: theme.muted }]}>
           {user ? 'YOU' : 'MALIU'}
         </Text>
-        {!!message.content && (
-          <Text selectable style={[styles.body, { color: theme.text }]}>
-            {message.content}
-          </Text>
-        )}
+        {!!message.content &&
+          (user ? (
+            <Text selectable style={[styles.body, { color: theme.text }]}>
+              {message.content}
+            </Text>
+          ) : (
+            <Markdown text={message.content} />
+          ))}
         {message.tool_calls?.map((call) => (
           <ToolCallCard
             key={call.id}
