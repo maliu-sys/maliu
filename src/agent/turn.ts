@@ -43,6 +43,7 @@ export async function runTurn({
   onConversation,
   complete,
   browser,
+  screen,
 }: {
   conversation: Conversation;
   prompt: string;
@@ -55,6 +56,7 @@ export async function runTurn({
   onConversation: (conversation: Conversation) => void;
   complete?: ModelCall;
   browser?: ToolEnv['browser'];
+  screen?: ToolEnv['screen'];
 }): Promise<Conversation> {
   let current = conversation;
   let completed = false;
@@ -83,6 +85,7 @@ export async function runTurn({
       env: {
         conversationId: current.id,
         browser,
+        screen,
         // A continuation serves the request the user wrote before the handoff.
         userMessage: synthetic
           ? current.messages.findLast((m) => m.role === 'user' && !m.synthetic)!

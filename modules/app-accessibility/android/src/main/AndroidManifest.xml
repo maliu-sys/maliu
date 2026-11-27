@@ -1,0 +1,32 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- The ongoing notification that shows a running task in another app and offers Stop. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!-- Android 11 hides other apps by default. Launcher apps are the ones app_open starts,
+       and seeing them also lets snapshots name the app on screen. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
+
+  <application>
+    <!-- Reading other apps needs the user to switch this service on; MaLiu only uses it
+         while the user asks for a task, never in the background. -->
+    <service
+      android:name="maliu.modules.appaccessibility.MaliuAccessibilityService"
+      android:exported="false"
+      android:label="@string/maliu_accessibility_label"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/maliu_accessibility_service" />
+    </service>
+  </application>
+
+</manifest>

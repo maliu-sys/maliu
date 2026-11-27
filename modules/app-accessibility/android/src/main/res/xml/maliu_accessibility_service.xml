@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- canRetrieveWindowContent reads the foreground window; canPerformGestures taps when an
+     element rejects a click action. Only window changes are subscribed at rest; content
+     changes are added while an action settles, then removed again.
+     Not-important views are left out, as TalkBack does: layout wrappers add nodes but no
+     meaning, and the snapshot walk pays for each one. notificationTimeout stays below the
+     150 ms quiet window, so the settle check sees changes in time. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/maliu_accessibility_description"
+    android:notificationTimeout="50" />

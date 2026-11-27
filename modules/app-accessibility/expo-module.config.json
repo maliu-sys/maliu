@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["maliu.modules.appaccessibility.AppAccessibilityModule"]
+  }
+}

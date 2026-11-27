@@ -1,4 +1,5 @@
 import type { BrowserController } from '../browser/controller';
+import type { ScreenController } from '../device/screen';
 
 export type ToolCall = {
   id: string;
@@ -28,6 +29,8 @@ export type ToolEnv = {
   // The latest message the user wrote; persisted before any tool runs.
   userMessage: Message;
   browser?: BrowserController;
+  // Set by the screen tools; shared across calls so pacing and the budget hold.
+  screen?: ScreenController;
 };
 
 export type Tool = {

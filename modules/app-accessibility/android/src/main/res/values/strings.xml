@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="maliu_accessibility_label">MaLiu screen access</string>
+  <string name="maliu_accessibility_description">Lets MaLiu read and operate the app on screen while you ask it to do a task. MaLiu takes one screen at a time, only while a task is running, and never in the background.</string>
+</resources>
