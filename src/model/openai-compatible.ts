@@ -1,6 +1,5 @@
 import { fetch } from 'expo/fetch';
 import type { Message, ModelCallOptions, ToolCall } from '../agent/types';
-import { throwIfAborted } from '../agent/timeout';
 import { readSSE } from './sse';
 
 export function completionUrl(baseUrl: string): string {
@@ -35,6 +34,7 @@ export async function streamModelCall({
   settings,
   messages,
   tools,
+  toolChoice,
   signal,
   onText,
   systemPrompt,
@@ -72,6 +72,7 @@ export async function streamModelCall({
               type: 'function',
               function: { name, description, parameters },
             })),
+            ...(toolChoice ? { tool_choice: toolChoice } : {}),
           }
         : {}),
     }),
@@ -97,7 +98,6 @@ export async function streamModelCall({
   let finish: string | null = null;
   const calls = new Map<number, ToolCall>();
   for await (const data of readSSE(response.body)) {
-    throwIfAborted(signal);
     if (data.trim() === '[DONE]') break;
     const chunk = JSON.parse(data) as Chunk;
     if (chunk.error)
@@ -107,17 +107,14 @@ export async function streamModelCall({
     if (choice.finish_reason) finish = choice.finish_reason;
     const delta = choice.delta;
     if (!delta) continue;
-    if (typeof delta.content === 'string') {
-      content += delta.content;
-      onText(content);
-    }
     if (typeof delta.reasoning_content === 'string') {
       reasoning = (reasoning ?? '') + delta.reasoning_content;
     }
+    if (typeof delta.content === 'string') {
+      content += delta.content;
+      onText(content, reasoning);
+    }
     for (const part of delta.tool_calls ?? []) {
-      if (!Number.isInteger(part.index) || part.index < 0 || part.index > 31) {
-        throw new Error('Invalid tool call index from the model.');
-      }
       const call = calls.get(part.index) ?? {
         id: '',
         type: 'function' as const,
@@ -128,19 +125,7 @@ export async function streamModelCall({
       call.function.arguments += part.function?.arguments ?? '';
       calls.set(part.index, call);
     }
-    if (
-      content.length +
-        (reasoning?.length ?? 0) +
-        [...calls.values()].reduce(
-          (n, c) => n + c.function.arguments.length,
-          0,
-        ) >
-      1_000_000
-    ) {
-      throw new Error('The model response exceeded the size limit.');
-    }
   }
-  throwIfAborted(signal);
   if (!finish)
     throw new Error('The model stream ended early. Please try again.');
   if (finish !== 'stop' && finish !== 'tool_calls') {
@@ -149,10 +134,7 @@ export async function streamModelCall({
   const toolCalls = [...calls.entries()]
     .sort(([a], [b]) => a - b)
     .map(([, c]) => c);
-  if (
-    toolCalls.some((c) => !c.id || !c.function.name) ||
-    new Set(toolCalls.map((c) => c.id)).size !== toolCalls.length
-  ) {
+  if (toolCalls.some((c) => !c.id || !c.function.name)) {
     throw new Error('The model returned malformed tool calls.');
   }
   if (finish === 'tool_calls' && !toolCalls.length)

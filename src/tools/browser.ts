@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '../agent/types';
+import type { Tool } from '../agent/types';
 import {
   browserUrl,
   type BrowserAction,
@@ -29,10 +29,12 @@ const fields = {
 };
 type Field = keyof typeof fields;
 
-function argumentsFor(args: unknown, allowed: Field[], required: Field[]) {
-  if (!args || typeof args !== 'object' || Array.isArray(args))
-    throw new Error('Expected an argument object.');
-  const values = { ...args } as Record<string, unknown>;
+function argumentsFor(
+  args: Record<string, unknown>,
+  allowed: Field[],
+  required: Field[],
+) {
+  const values = { ...args };
   for (const name of Object.keys(values)) {
     if (!allowed.includes(name as Field))
       throw new Error(`Unknown argument: ${name}`);
@@ -72,11 +74,12 @@ function tool(
   description: string,
   allowed: Field[] = [],
   required: Field[] = allowed,
-): ToolDefinition {
+): Tool {
   return {
     name: `browser_${action}`,
     description,
     pausesAgent: action === 'handoff',
+    observesState: action !== 'handoff' && action !== 'read',
     parameters: {
       type: 'object',
       properties: Object.fromEntries(
@@ -89,7 +92,6 @@ function tool(
       const values = argumentsFor(args, allowed, required);
       if (!env.browser)
         throw new Error('Browser is unavailable in this session.');
-      if (signal.aborted) throw new Error('Stopped.');
       if (action === 'handoff') {
         return {
           status: 'needs_user',
@@ -102,7 +104,7 @@ function tool(
   };
 }
 
-export const browserTools: ToolDefinition[] = [
+export const browserTools: Tool[] = [
   tool(
     'open',
     'Open a website in the persistent, single-tab browser and return its interactive elements. Login cookies are reused. New links share this tab.',
@@ -122,22 +124,22 @@ After an action times out or navigation interrupts it, inspect the current page 
   ),
   tool(
     'click',
-    'Click an element ref. Then use browser_snapshot to verify the outcome.',
+    'Click an element ref and return the resulting snapshot. Take another snapshot if content is still loading.',
     ['ref'],
   ),
   tool(
     'fill',
-    'Replace a text field using its ref. Use browser_handoff for login credentials or verification codes.',
+    'Replace a text field using its ref and return the resulting snapshot. Use browser_handoff for login credentials or verification codes.',
     ['ref', 'text'],
   ),
   tool(
     'press',
-    'Send Enter or Escape to the focused element. Scripted keys may not work on all sites; use browser_snapshot to verify the result.',
+    'Send Enter or Escape to the focused element and return the resulting snapshot. Scripted keys may not work on all sites; check the snapshot.',
     ['key'],
   ),
   tool(
     'scroll',
-    'Scroll down or up by most of a screen. Optionally target a scrollable element. Observe again for newly loaded content.',
+    'Scroll down or up by most of a screen and return the resulting snapshot. Optionally target a scrollable element.',
     ['direction', 'ref'],
     ['direction'],
   ),

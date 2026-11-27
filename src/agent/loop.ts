@@ -5,6 +5,7 @@ import {
   type Message,
   type ModelSettings,
   type Tool,
+  type ToolEnv,
   type ModelCall,
 } from './types';
 import { throwIfAborted, withTimeout } from './timeout';
@@ -43,9 +44,38 @@ export function closePendingTools(
   });
 }
 
+// Only the latest successful state observation is current; older ones only cost tokens.
+export function withoutStaleState(
+  messages: Message[],
+  tools: Tool[],
+): Message[] {
+  const observers = new Set(
+    tools.filter((tool) => tool.observesState).map((tool) => tool.name),
+  );
+  const isObservation = (message: Message) =>
+    message.role === 'tool' &&
+    !message.isError &&
+    observers.has(message.toolName ?? '');
+  const latest = messages.findLastIndex(isObservation);
+  return messages.map((message, index) =>
+    index < latest && isObservation(message)
+      ? {
+          ...message,
+          content: JSON.stringify({
+            omitted: 'Outdated state. A later result shows the current state.',
+          }),
+        }
+      : message,
+  );
+}
+
+const finalTurnNote = `This is the last step for this request, so tools are disabled.
+Summarize what was done and what remains; the user can send a message to continue.`;
+
 export async function runAgent({
   history,
-  prompt,
+  input,
+  env,
   settings,
   tools,
   signal,
@@ -57,7 +87,8 @@ export async function runAgent({
   complete = streamModelCall,
 }: {
   history: Message[];
-  prompt: string; // current input
+  input: Message; // current input
+  env: ToolEnv;
   settings: ModelSettings;
   tools: Tool[];
   signal: AbortSignal;
@@ -71,40 +102,50 @@ export async function runAgent({
   maxTurns?: number;
   complete?: ModelCall;
 }): Promise<'completed' | 'waiting'> {
-  let messages: Message[] = [
-    ...closePendingTools(history),
-    { id: newId(), createdAt: Date.now(), role: 'user', content: prompt },
-  ];
+  let messages: Message[] = [...history, input];
   let draft: Message | undefined;
-  const publish = async (status: 'running' | 'waiting' = 'running') => {
+  const save = async (status: 'running' | 'waiting' = 'running') => {
     onMessages([...messages]);
     await checkpoint([...messages], status);
+  };
+  // Every checkpoint is a cancellation point: nothing new starts after a stop.
+  const publish = async (status?: 'running' | 'waiting') => {
+    await save(status);
+    throwIfAborted(signal);
   };
   try {
     await publish();
     for (let turn = 0; turn < maxTurns; turn++) {
       // call the model API
-      throwIfAborted(signal);
+      const lastTurn = turn === maxTurns - 1;
       onStatus('Thinking…');
       const draftId = newId();
       const createdAt = Date.now();
-      draft = { id: draftId, createdAt, role: 'assistant', content: '' };
       const answer = await withTimeout(signal, 120_000, (requestSignal) =>
         complete({
           settings,
-          messages,
+          messages: withoutStaleState(messages, tools),
           tools,
-          systemPrompt,
+          toolChoice: lastTurn ? 'none' : undefined,
+          systemPrompt: lastTurn
+            ? `${systemPrompt}\n\n${finalTurnNote}`
+            : systemPrompt,
           signal: requestSignal,
-          onText: (content) => {
-            if (signal.aborted || requestSignal.aborted) return;
-            draft = { id: draftId, createdAt, role: 'assistant', content };
+          onText: (content, reasoning) => {
+            if (requestSignal.aborted) return;
+            // Providers may reject a later tool request whose history lacks reasoning.
+            draft = {
+              id: draftId,
+              createdAt,
+              role: 'assistant',
+              content,
+              reasoning_content: reasoning,
+            };
             onStatus('Responding…');
             onMessages([...messages, draft]);
           },
         }),
       );
-      throwIfAborted(signal);
       messages = [
         ...messages,
         { id: draftId, createdAt, role: 'assistant', ...answer },
@@ -113,14 +154,12 @@ export async function runAgent({
 
       // publish the results to ChatScreen
       await publish();
-      throwIfAborted(signal);
 
       // no tool calls means the task is finished, then break.
       if (!answer.tool_calls?.length) return 'completed';
 
       // processing the tool calls
       for (const call of answer.tool_calls) {
-        throwIfAborted(signal);
         onStatus(`Running ${call.function.name}…`);
         let content: string;
         let isError = false;
@@ -129,17 +168,19 @@ export async function runAgent({
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
           const args: unknown = JSON.parse(call.function.arguments);
+          if (!args || typeof args !== 'object' || Array.isArray(args))
+            throw new Error('Tool arguments must be a JSON object.');
           // Wait at most 30 seconds for the tool.
           const output = await withTimeout(signal, 30_000, (toolSignal) =>
-            tool.execute(args, toolSignal),
+            tool.execute(args as Record<string, unknown>, toolSignal, env),
           );
           content = JSON.stringify(output) ?? 'null';
           pause = tool.pausesAgent === true;
         } catch (error) {
           isError = true;
-          throwIfAborted(signal);
           content = JSON.stringify({ error: errorMessage(error) });
         }
+        // After a stop the result is not trusted; closePendingTools marks it unknown.
         throwIfAborted(signal);
         messages = [
           ...messages,
@@ -159,19 +200,19 @@ export async function runAgent({
             'Not executed: waiting for the user. Observe the page and request new actions after they return.',
           );
           await publish('waiting');
-          throwIfAborted(signal);
           return 'waiting';
         }
         await publish();
       }
     }
+    // Reached only when a provider ignores tool_choice on the last turn.
     throw new Error(
       `Stopped after ${maxTurns} model turns. Send a message to continue.`,
     );
   } catch (error) {
     if (draft?.content) messages = [...messages, draft];
     messages = closePendingTools(messages);
-    await publish();
+    await save();
     throw error;
   }
 }

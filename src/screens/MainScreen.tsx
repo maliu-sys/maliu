@@ -100,7 +100,7 @@ export function MainScreen({
     return () => listener.remove();
   }, [screen]);
 
-  const send = async (prompt: string) => {
+  const send = async (prompt: string, synthetic = false) => {
     if (controller.current || creatingChat.current) return;
     const run = new AbortController(); // every send needs an AbortController
     controller.current = run;
@@ -111,6 +111,7 @@ export function MainScreen({
       const result = await runTurn({
         conversation: conversation.current,
         prompt,
+        synthetic,
         settings,
         browser,
         signal: run.signal,
@@ -256,6 +257,7 @@ export function MainScreen({
             setScreen('chat');
             void send(
               'I have finished the browser handoff. Read the current page and continue the task.',
+              true,
             );
           }}
           onStop={() =>

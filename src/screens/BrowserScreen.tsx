@@ -26,6 +26,7 @@ import { browserPageScript } from '../browser/page-script';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useTheme } from '../components/theme';
 import { errorMessage } from '../agent/types';
+import { withTimeout } from '../agent/timeout';
 
 export function BrowserScreen({
   browser,
@@ -106,7 +107,10 @@ export function BrowserScreen({
     setError('');
     try {
       if (args.url) args.url = browserUrl(args.url);
-      await browser.execute(action, args, controller.signal);
+      // The agent's tool timeout does not cover manual browsing.
+      await withTimeout(controller.signal, 25_000, (signal) =>
+        browser.execute(action, args, signal),
+      );
     } catch (error) {
       setError(errorMessage(error));
     } finally {

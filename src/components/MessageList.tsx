@@ -14,6 +14,12 @@ const MessageRow = memo(
   }) {
     const theme = useTheme();
     const user = message.role === 'user';
+    if (message.synthetic)
+      return (
+        <Text style={[styles.note, { color: theme.muted }]}>
+          {message.content}
+        </Text>
+      );
     return (
       <View
         style={[
@@ -110,6 +116,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   body: { fontSize: 16, lineHeight: 24 },
+  note: { fontSize: 13, textAlign: 'center', paddingHorizontal: 16 },
   empty: {
     flex: 1,
     justifyContent: 'center',

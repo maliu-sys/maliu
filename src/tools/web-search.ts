@@ -1,7 +1,7 @@
 import { fetch } from 'expo/fetch';
-import type { ToolDefinition } from '../agent/types';
+import type { Tool } from '../agent/types';
 
-export const webSearch: ToolDefinition = {
+export const webSearch: Tool = {
   name: 'web_search',
   description: `Search the web for current information.
 Returns titles, source URLs and excerpts.
@@ -16,9 +16,6 @@ Cite the URLs in your answer.`,
   },
   async execute(args, signal) {
     if (
-      !args ||
-      typeof args !== 'object' ||
-      !('query' in args) ||
       typeof args.query !== 'string' ||
       !args.query.trim() ||
       args.query.length > 400

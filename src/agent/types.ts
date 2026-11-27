@@ -16,14 +16,8 @@ export type Message = {
   tool_call_id?: string;
   toolName?: string;
   isError?: boolean;
-};
-
-export type Tool = {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-  pausesAgent?: boolean;
-  execute: (args: unknown, signal: AbortSignal) => Promise<unknown>;
+  // A user-role message written by the app, such as resuming after a browser handoff.
+  synthetic?: true;
 };
 
 // some tools need environment information in addition to tool arguments.
@@ -31,14 +25,20 @@ export type Tool = {
 // the environment is provided by the agent.
 export type ToolEnv = {
   conversationId: string;
-  // Resolved at execution, after the current user message has been persisted.
-  currentUserMessage: () => Message;
+  // The latest message the user wrote; persisted before any tool runs.
+  userMessage: Message;
   browser?: BrowserController;
 };
 
-export type ToolDefinition = Omit<Tool, 'execute'> & {
+export type Tool = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  pausesAgent?: boolean;
+  // Results describe the current state; only the latest one is sent to the model.
+  observesState?: boolean;
   execute: (
-    args: unknown,
+    args: Record<string, unknown>,
     signal: AbortSignal,
     env: ToolEnv,
   ) => Promise<unknown>;
@@ -54,8 +54,9 @@ export type ModelCallOptions = {
   settings: ModelSettings;
   messages: Message[];
   tools: Tool[];
+  toolChoice?: 'none';
   signal: AbortSignal;
-  onText: (content: string) => void;
+  onText: (content: string, reasoning?: string) => void;
   systemPrompt: string;
 };
 export type ModelCall = (

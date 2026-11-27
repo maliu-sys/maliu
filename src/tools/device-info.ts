@@ -1,22 +1,12 @@
 import { getDeviceInfo } from '../../modules/device-info/src/index';
-import type { ToolDefinition } from '../agent/types';
-import { throwIfAborted } from '../agent/timeout';
+import type { Tool } from '../agent/types';
 
-export const deviceInfo: ToolDefinition = {
+export const deviceInfo: Tool = {
   name: 'get_device_info',
   description: `Read this Android device manufacturer, model, Android version,
 API level and supported CPU architectures.`,
   parameters: { type: 'object', properties: {}, additionalProperties: false },
-  async execute(args, signal) {
-    if (
-      !args ||
-      typeof args !== 'object' ||
-      Array.isArray(args) ||
-      Object.keys(args).length
-    ) {
-      throw new Error('This tool accepts an empty object.');
-    }
-    throwIfAborted(signal);
+  async execute() {
     return getDeviceInfo();
   },
 };

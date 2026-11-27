@@ -311,6 +311,70 @@ export const browser = [
     },
   },
   {
+    id: 'action-returns-snapshot',
+    suite: 'browser',
+    async run(ctx) {
+      const controller = new BrowserController();
+      const doc = page(
+        '<button>Stay</button><a id="leave" href="/next">Leave</a>',
+      );
+      doc.window.ReactNativeWebView.postMessage = (raw) =>
+        controller.receive(raw);
+      controller.attach({
+        navigate: () => {},
+        injectJavaScript: (script) => doc.window.eval(script),
+        goBack: () => {},
+        stopLoading: () => {},
+      });
+      controller.update({ url: 'https://example.com/' });
+      // Re-running the page script repeats the readiness handshake.
+      doc.window.eval(browserPageScript);
+      try {
+        const { result: snapshot } = await controller.execute(
+          'snapshot',
+          {},
+          ctx.signal,
+        );
+        const ref = (name) =>
+          snapshot.elements.find((e) => e.name === name).ref;
+        const clicked = await controller.execute(
+          'click',
+          { ref: ref('Stay') },
+          ctx.signal,
+        );
+        ctx.check(
+          'an action returns its result with a fresh snapshot',
+          clicked.result.dispatched === true &&
+            clicked.snapshot.elements.length === 2,
+        );
+
+        doc.window.document
+          .querySelector('#leave')
+          .addEventListener('click', (event) => {
+            event.preventDefault();
+            controller.loadStarted();
+          });
+        const leaving = controller.execute(
+          'click',
+          { ref: ref('Leave') },
+          ctx.signal,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        doc.window.eval(browserPageScript);
+        const left = await leaving;
+        ctx.check(
+          'navigation during an action returns the new page without claiming success',
+          left.result.navigated === true &&
+            left.result.dispatched === undefined &&
+            left.snapshot.elements.length === 2,
+        );
+      } finally {
+        controller.attach(undefined);
+        doc.close();
+      }
+    },
+  },
+  {
     id: 'tool-boundary',
     suite: 'browser',
     async run(ctx) {

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
+import process from 'node:process';
 import { call, reply, scripted, turn } from '../helpers.mjs';
-import { loadConversation } from '../../src/storage/conversations.ts';
+import {
+  emptyConversation,
+  loadConversation,
+  saveConversation,
+} from '../../src/storage/conversations.ts';
 import { runAgent } from '../../src/agent/loop.ts';
+import { recentHistory } from '../../src/agent/turn.ts';
+import { buildSystemPrompt } from '../../src/agent/prompt.ts';
 import { withTimeout } from '../../src/agent/timeout.ts';
 
 export const agent = [
@@ -20,16 +27,15 @@ export const agent = [
             execute: async (
               { id },
               signal,
-              { conversationId, currentUserMessage },
+              { conversationId, userMessage },
             ) => {
-              const source = currentUserMessage();
               const saved = await loadConversation(conversationId);
               ctx.check(
                 'ordinary tool receives the persisted current-user source',
                 !signal.aborted &&
-                  source.content === 'Hello' &&
+                  userMessage.content === 'Hello' &&
                   saved.messages.some(
-                    (m) => m.id === source.id && m.role === 'user',
+                    (m) => m.id === userMessage.id && m.role === 'user',
                   ),
               );
               executions++;
@@ -113,23 +119,20 @@ export const agent = [
     id: 'step-limit',
     suite: 'agent',
     async run(ctx) {
-      let current;
       const complete = scripted(
-        ...Array.from({ length: 16 }, () => call('missing', {})),
+        ...Array.from({ length: 15 }, () => call('missing', {})),
+        ({ toolChoice, systemPrompt }) => {
+          assert.equal(toolChoice, 'none');
+          assert.match(systemPrompt, /tools are disabled/);
+          return reply('Progress so far.');
+        },
       );
-      await assert.rejects(
-        turn(ctx, {
-          complete,
-          onConversation: (c) => {
-            current = c;
-          },
-        }),
-        /16 model turns/,
-      );
+      const conversation = await turn(ctx, { complete });
       ctx.check('bounded model loop', complete.calls === 16);
       ctx.check(
-        'failure status persisted',
-        (await loadConversation(current.id)).status === 'interrupted',
+        'last turn summarizes instead of failing',
+        (await loadConversation(conversation.id)).status === 'idle' &&
+          conversation.messages.at(-1).content === 'Progress so far.',
       );
     },
   },
@@ -138,10 +141,12 @@ export const agent = [
     suite: 'agent',
     async run(ctx) {
       const controller = new AbortController();
+      const input = { id: 'input', role: 'user', content: 'Hello' };
       await assert.rejects(
         runAgent({
           history: [],
-          prompt: 'Hello',
+          input,
+          env: { conversationId: 'cancel', userMessage: input },
           settings: ctx.settings,
           tools: [],
           systemPrompt: 'Test cancellation.',
@@ -180,6 +185,151 @@ export const agent = [
         /timed out/,
       );
       ctx.check('deadline abort reaches operation', aborted);
+    },
+  },
+  {
+    id: 'interrupted-draft-keeps-reasoning',
+    suite: 'agent',
+    async run(ctx) {
+      let current;
+      await assert.rejects(
+        turn(ctx, {
+          onConversation: (c) => {
+            current = c;
+          },
+          complete: async ({ onText }) => {
+            onText('Partial answer', 'Partial reasoning');
+            throw new Error('Connection lost.');
+          },
+        }),
+        /Connection lost/,
+      );
+      const draft = (await loadConversation(current.id)).messages.at(-1);
+      ctx.check(
+        'an interrupted draft keeps the reasoning later tool requests need',
+        draft.role === 'assistant' &&
+          draft.content === 'Partial answer' &&
+          draft.reasoning_content === 'Partial reasoning',
+      );
+    },
+  },
+  {
+    id: 'stale-state-omitted',
+    suite: 'agent',
+    async run(ctx) {
+      let observations = 0;
+      const conversation = await turn(ctx, {
+        tools: [
+          {
+            name: 'observe',
+            description: '',
+            parameters: {},
+            observesState: true,
+            execute: async () => ({ page: ++observations }),
+          },
+          {
+            name: 'lookup',
+            description: '',
+            parameters: {},
+            execute: async () => ({ text: 'kept' }),
+          },
+        ],
+        complete: scripted(
+          call('observe', {}, 'call-1'),
+          call('lookup', {}, 'call-2'),
+          call('observe', {}, 'call-3'),
+          ({ messages }) => {
+            const results = messages
+              .filter((m) => m.role === 'tool')
+              .map((m) => JSON.parse(m.content));
+            assert.ok(results[0].omitted);
+            assert.deepEqual(results.slice(1), [{ text: 'kept' }, { page: 2 }]);
+            return reply('Done.');
+          },
+        ),
+      });
+      ctx.check('the model sees only the latest state observation', true);
+      ctx.check(
+        'stored history keeps every observation',
+        conversation.messages
+          .filter((m) => m.toolName === 'observe')
+          .every((m) => !JSON.parse(m.content).omitted),
+      );
+    },
+  },
+  {
+    id: 'synthetic-continuation',
+    suite: 'agent',
+    async run(ctx) {
+      const task = 'Book a table. ' + 'Details. '.repeat(1500);
+      const history = recentHistory([
+        { id: 'old', role: 'user', content: 'Earlier question.' },
+        { id: 'old-a', role: 'assistant', content: 'Earlier answer.' },
+        { id: 'task', role: 'user', content: task },
+        { id: 'a1', role: 'assistant', content: 'x'.repeat(20000) },
+        {
+          id: 'resume',
+          role: 'user',
+          content: 'Handoff finished.',
+          synthetic: true,
+        },
+        { id: 'a2', role: 'assistant', content: 'y'.repeat(20000) },
+      ]);
+      ctx.check(
+        'a continuation does not split the task it resumes',
+        history[0].id === 'task',
+        { first: history[0].id },
+      );
+
+      const conversation = emptyConversation();
+      conversation.messages = [
+        { id: `${conversation.id}-task`, role: 'user', content: task },
+        { id: `${conversation.id}-a`, role: 'assistant', content: 'Waiting.' },
+      ];
+      await saveConversation(conversation);
+      let source;
+      const resumed = await turn(ctx, {
+        conversation,
+        prompt: 'Handoff finished.',
+        synthetic: true,
+        tools: [
+          {
+            name: 'source',
+            description: '',
+            parameters: {},
+            execute: async (_args, _signal, { userMessage }) => {
+              source = userMessage;
+            },
+          },
+        ],
+        complete: scripted(call('source', {}), reply('Done.')),
+      });
+      ctx.check(
+        'tools serve the message the user wrote',
+        source?.id === `${conversation.id}-task`,
+      );
+      ctx.check(
+        'the continuation is stored as app-written',
+        resumed.messages.find((m) => m.content === 'Handoff finished.')
+          ?.synthetic === true,
+      );
+    },
+  },
+  {
+    id: 'local-time-prompt',
+    suite: 'agent',
+    async run(ctx) {
+      const instant = new Date('2026-11-26T23:30:00Z');
+      process.env.TZ = 'Asia/Shanghai';
+      const east = buildSystemPrompt(instant);
+      process.env.TZ = 'America/St_Johns';
+      const west = buildSystemPrompt(instant);
+      ctx.check(
+        'prompt uses the local date and UTC offset',
+        east.includes('2026-11-27 07:30 (UTC+08:00)') &&
+          west.includes('2026-11-26 20:00 (UTC-03:30)'),
+        { east, west },
+      );
     },
   },
 ];

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { streamModelCall } from '../../src/model/openai-compatible.ts';
-import { bindToolEnv } from '../../src/tools/index.ts';
+import { tools as registered } from '../../src/tools/index.ts';
 import { savedHistory } from '../helpers.mjs';
 import { listFacts } from '../../src/memory/store.ts';
 
@@ -26,14 +26,6 @@ export const tools = [
     suite: 'tools',
     async run(ctx) {
       const systemPrompt = 'Use the supplied application policy verbatim.';
-      const registered = bindToolEnv({
-        conversationId: 'stream-contract',
-        currentUserMessage: () => ({
-          id: 'user',
-          role: 'user',
-          content: 'Hello',
-        }),
-      });
       let request;
       const result = await streamModelCall({
         settings: ctx.settings,
@@ -134,16 +126,17 @@ export const tools = [
     suite: 'tools',
     async run(ctx) {
       const conversation = await savedHistory('Remember: I live in Nanjing.');
-      const tools = bindToolEnv({
+      const env = {
         conversationId: conversation.id,
-        currentUserMessage: () => conversation.messages[0],
-      });
-      const upsert = tools.find((tool) => tool.name === 'fact_upsert');
-      const remove = tools.find((tool) => tool.name === 'fact_delete');
+        userMessage: conversation.messages[0],
+      };
+      const upsert = registered.find((tool) => tool.name === 'fact_upsert');
+      const remove = registered.find((tool) => tool.name === 'fact_delete');
       await assert.rejects(
         upsert.execute(
           { key: 'user.city', value: 'Nanjing', evidence: 'invented' },
           ctx.signal,
+          env,
         ),
       );
       ctx.check(
@@ -153,12 +146,13 @@ export const tools = [
       await upsert.execute(
         { key: 'user.city', value: 'Nanjing', evidence: 'I live in Nanjing' },
         ctx.signal,
+        env,
       );
       ctx.check(
         'supported fact persisted',
         (await listFacts())[0]?.value === 'Nanjing',
       );
-      await remove.execute({ key: 'user.city' }, ctx.signal);
+      await remove.execute({ key: 'user.city' }, ctx.signal, env);
       ctx.check('delete removes fact', (await listFacts()).length === 0);
     },
   },

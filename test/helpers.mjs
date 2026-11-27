@@ -32,15 +32,11 @@ export function scripted(...steps) {
   return complete;
 }
 
-export function turn(
-  ctx,
-  { useMemory = false, tools = [], context, ...options } = {},
-) {
+export function turn(ctx, { useMemory = false, tools = [], ...options } = {}) {
   return runTurn({
     conversation: emptyConversation(),
     prompt: 'Hello',
     tools: useMemory ? [...tools, ...memoryTools] : tools,
-    context,
     signal: ctx.signal,
     settings: ctx.settings,
     complete: scripted(reply('Hello.')),

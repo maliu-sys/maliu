@@ -1,17 +1,19 @@
 import { runAgent } from './loop';
 import { buildSystemPrompt } from './prompt';
-import type {
-  ModelCall,
-  Conversation,
-  Message,
-  ModelSettings,
-  ToolDefinition,
-  ToolEnv,
+import {
+  newId,
+  type ModelCall,
+  type Conversation,
+  type Message,
+  type ModelSettings,
+  type Tool,
+  type ToolEnv,
 } from './types';
 import { saveConversation } from '../storage/conversations';
-import { bindToolEnv, tools as registeredTools } from '../tools/index';
+import { tools as registeredTools } from '../tools/index';
 
 // Keep the latest turn intact, including a browser task waiting for handoff.
+// App-written continuations belong to the turn they resume.
 export function recentHistory(
   messages: Message[],
   maxChars = 24000,
@@ -19,9 +21,10 @@ export function recentHistory(
   let start = messages.length;
   let chars = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
-    chars += JSON.stringify(messages[i]).length;
+    const message = messages[i]!;
+    chars += JSON.stringify(message).length;
     if (chars > maxChars && start < messages.length) break;
-    if (messages[i]!.role === 'user') start = i;
+    if (message.role === 'user' && !message.synthetic) start = i;
   }
   return messages.slice(start);
 }
@@ -31,6 +34,7 @@ export function recentHistory(
 export async function runTurn({
   conversation,
   prompt,
+  synthetic = false,
   settings,
   tools = registeredTools,
   signal,
@@ -38,19 +42,18 @@ export async function runTurn({
   onStatus,
   onConversation,
   complete,
-  context = '',
   browser,
 }: {
   conversation: Conversation;
   prompt: string;
+  synthetic?: boolean;
   settings: ModelSettings;
-  tools?: ToolDefinition[];
+  tools?: Tool[];
   signal: AbortSignal;
   onMessages: (messages: Message[]) => void;
   onStatus: (status: string) => void;
   onConversation: (conversation: Conversation) => void;
   complete?: ModelCall;
-  context?: string;
   browser?: ToolEnv['browser'];
 }): Promise<Conversation> {
   let current = conversation;
@@ -63,22 +66,29 @@ export async function runTurn({
       0,
       current.messages.length - history.length,
     );
+    const input: Message = {
+      id: newId(),
+      createdAt: Date.now(),
+      role: 'user',
+      content: prompt,
+      synthetic: synthetic || undefined,
+    };
     const result = await runAgent({
       history,
-      prompt,
+      input,
       settings,
       signal,
       complete,
-      tools: bindToolEnv(
-        {
-          conversationId: current.id,
-          browser,
-          currentUserMessage: () =>
-            current.messages.findLast((m) => m.role === 'user')!,
-        },
-        tools,
-      ),
-      systemPrompt: buildSystemPrompt(context),
+      tools,
+      env: {
+        conversationId: current.id,
+        browser,
+        // A continuation serves the request the user wrote before the handoff.
+        userMessage: synthetic
+          ? current.messages.findLast((m) => m.role === 'user' && !m.synthetic)!
+          : input,
+      },
+      systemPrompt: buildSystemPrompt(),
       onMessages: (messages) => onMessages([...archived, ...messages]),
       onStatus,
       checkpoint: async (messages, status = 'running') => {

@@ -1,5 +1,5 @@
 import { newId } from '../agent/types';
-import { throwIfAborted, withTimeout } from '../agent/timeout';
+import { throwIfAborted } from '../agent/timeout';
 
 export type BrowserAction =
   'open' | 'snapshot' | 'read' | 'click' | 'fill' | 'press' | 'scroll' | 'back';
@@ -76,7 +76,10 @@ export class BrowserController {
   }
   receive(raw: string) {
     // This is the untrusted page-message boundary; it can only return tool data.
-    if (raw.length > 250000) return;
+    if (raw.length > 250000) {
+      this.pending?.reject(new Error('The page sent an oversized response.'));
+      return;
+    }
     let message: unknown;
     try {
       message = JSON.parse(raw);
@@ -131,6 +134,7 @@ export class BrowserController {
     args: BrowserArgs,
     signal: AbortSignal,
   ) {
+    throwIfAborted(signal);
     const id = newId();
     return new Promise<unknown>((resolve, reject) => {
       const finish = (error?: Error, value?: unknown) => {
@@ -146,58 +150,75 @@ export class BrowserController {
         reject: (error) => finish(error),
       };
       signal.addEventListener('abort', abort, { once: true });
-      try {
-        this.driver!.injectJavaScript(
-          `if (window.__maliuBrowser) { window.__maliuBrowser.run(${JSON.stringify(id)}, ${JSON.stringify(action)}, ${JSON.stringify(args)}); }
-          else { window.ReactNativeWebView.postMessage(${JSON.stringify(JSON.stringify({ channel: 'maliu-browser', id, error: 'The page changed before the operation. Wait for loading and take a new snapshot.' }))}); } true;`,
-        );
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(String(error)));
-      }
+      this.driver!.injectJavaScript(
+        `if (window.__maliuBrowser) { window.__maliuBrowser.run(${JSON.stringify(id)}, ${JSON.stringify(action)}, ${JSON.stringify(args)}); }
+        else { window.ReactNativeWebView.postMessage(${JSON.stringify(JSON.stringify({ channel: 'maliu-browser', id, error: 'The page changed before the operation. Wait for loading and take a new snapshot.' }))}); } true;`,
+      );
     });
+  }
+  // A load that starts after readiness (e.g. a redirect) only delays the snapshot.
+  private async snapshot(signal: AbortSignal): Promise<unknown> {
+    for (;;) {
+      await this.waitReady(signal);
+      try {
+        return await this.request('snapshot', {}, signal);
+      } catch (error) {
+        if (this.ready || this.state.error || signal.aborted) throw error;
+      }
+    }
   }
   async execute(
     action: BrowserAction,
     args: BrowserArgs,
-    parent: AbortSignal,
+    signal: AbortSignal,
   ): Promise<unknown> {
-    throwIfAborted(parent);
     if (!this.driver) throw new Error('Browser is not mounted.');
     if (this.busy) throw new Error('Another browser operation is in progress.');
     this.busy = true;
+    const stop = () => {
+      this.driver?.stopLoading();
+      if (this.state.loading)
+        this.fail('Navigation stopped. Reload or open a page to continue.');
+    };
+    signal.addEventListener('abort', stop, { once: true });
     try {
-      return await withTimeout(parent, 25000, async (signal) => {
-        const stop = () => {
-          this.driver?.stopLoading();
-          if (this.state.loading)
-            this.fail('Navigation stopped. Reload or open a page to continue.');
-        };
-        signal.addEventListener('abort', stop, { once: true });
-        try {
-          if (action === 'open') {
-            if (this.state.url === 'about:blank' && !this.state.error)
-              await this.waitReady(signal);
-            throwIfAborted(signal);
-            this.loadStarted();
-            this.driver!.navigate(args.url!);
-          } else if (action === 'back') {
-            if (!this.state.canGoBack) throw new Error('No previous page.');
-            this.loadStarted();
-            this.driver!.goBack();
-          }
-          await this.waitReady(signal);
-          throwIfAborted(signal);
-          const result = await this.request(
-            action === 'open' || action === 'back' ? 'snapshot' : action,
-            args,
-            signal,
-          );
-          return { result, externalLink: this.state.externalUrl || undefined };
-        } finally {
-          signal.removeEventListener('abort', stop);
-        }
+      throwIfAborted(signal);
+      const finish = (result: unknown, snapshot?: unknown) => ({
+        result,
+        snapshot,
+        externalLink: this.state.externalUrl || undefined,
       });
+      if (action === 'open') {
+        if (this.state.url === 'about:blank' && !this.state.error)
+          await this.waitReady(signal);
+        throwIfAborted(signal);
+        this.loadStarted();
+        this.driver.navigate(args.url!);
+        return finish(await this.snapshot(signal));
+      }
+      if (action === 'back') {
+        if (!this.state.canGoBack) throw new Error('No previous page.');
+        this.loadStarted();
+        this.driver.goBack();
+        return finish(await this.snapshot(signal));
+      }
+      if (action === 'snapshot') return finish(await this.snapshot(signal));
+      await this.waitReady(signal);
+      if (action === 'read')
+        return finish(await this.request(action, args, signal));
+      let result: unknown;
+      try {
+        result = await this.request(action, args, signal);
+      } catch (error) {
+        if (this.ready || this.state.error || signal.aborted) throw error;
+        result = {
+          navigated: true,
+          note: 'The page navigated before the action reported back. It may or may not have taken effect; check the snapshot before repeating it.',
+        };
+      }
+      return finish(result, await this.snapshot(signal));
     } finally {
+      signal.removeEventListener('abort', stop);
       this.busy = false;
     }
   }

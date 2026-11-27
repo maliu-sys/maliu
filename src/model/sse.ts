@@ -30,8 +30,6 @@ export async function* readSSE(
         buffer = buffer.slice(end + 1);
         if (event !== undefined) yield event;
       }
-      if (buffer.length > 2_000_000)
-        throw new Error('Model stream frame is too large.');
       if (done) break;
     }
     if (buffer) consume(buffer);

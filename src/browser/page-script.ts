@@ -125,7 +125,7 @@ export const browserPageScript = String.raw /* javascript */ `
       if (proceed && args.key === 'Enter' && el.form && el.tagName !== 'TEXTAREA') el.form.requestSubmit();
     } else throw new Error('Unknown browser action.');
     return { dispatched: true, url: location.href,
-      note: 'Read a new snapshot to verify the result. Scripted input is not accepted by every website.' };
+      note: 'Scripted input is not accepted by every website; check the snapshot.' };
   };
   window.__maliuBrowser = {
     run(id, action, args) {
