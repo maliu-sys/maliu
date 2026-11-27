@@ -57,7 +57,13 @@ class TaskOverlay(private val service: AccessibilityService) {
     windows.addView(
       view,
       params(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-        .apply { flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE },
+        .apply {
+          // Actions on a screen that timed out would fail; the visible frame keeps it on
+          // while MaLiu works in another app.
+          flags = flags or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        },
     )
     view.start()
     frame = view

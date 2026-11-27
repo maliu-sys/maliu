@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
   AppState, // indicate the APP state, 'active'(foreground), 'background', 'inactive'
   BackHandler,
@@ -32,6 +33,8 @@ import { ScreenController } from '../device/screen';
 import { useScreenAccess } from '../device/use-screen-access';
 import { useScreenAccessPrompt } from '../device/screen-prompt';
 import { useTheme } from '../components/theme';
+
+const RUN_KEEP_AWAKE = 'maliu-run';
 
 export function MainScreen({
   initialConversation,
@@ -92,7 +95,9 @@ export function MainScreen({
         !screenAccess.actingInOtherApps
       ) {
         controller.current.abort(
-          new Error('Stopped because the app moved to the background.'),
+          new Error(
+            'Stopped because MaLiu left the screen, for example when the screen turned off or another app opened.',
+          ),
         );
       }
     });
@@ -106,6 +111,15 @@ export function MainScreen({
       if (timer.current) clearTimeout(timer.current);
     };
   }, [screenAccess]);
+
+  // The user waits for an answer without touching the phone; a screen that times out
+  // pauses MaLiu and stops the run. Keep it on only while a run is in progress. While
+  // MaLiu works in another app, its on-screen frame keeps the screen on instead.
+  useEffect(() => {
+    if (!busy) return;
+    void activateKeepAwakeAsync(RUN_KEEP_AWAKE);
+    return () => void deactivateKeepAwake(RUN_KEEP_AWAKE);
+  }, [busy]);
 
   useEffect(() => {
     if (screen === 'chat') return;
