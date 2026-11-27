@@ -1,6 +1,7 @@
 package maliu.modules.appaccessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
@@ -16,7 +17,6 @@ import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
@@ -59,7 +59,8 @@ private const val PREFETCH = AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_DEP
 
 fun isServiceEnabled(context: Context): Boolean {
   val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-  return manager.getEnabledAccessibilityServiceList(0).any {
+  // The argument filters by feedback type; 0 matches no service at all.
+  return manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK).any {
     ComponentName.unflattenFromString(it.id)?.className == COMPONENT
   }
 }
@@ -75,7 +76,13 @@ fun openServiceSettings(context: Context) {
 
 private data class LaunchableApp(val label: String, val packageName: String)
 
-private class Foreground(val root: AccessibilityNodeInfo, val system: Boolean)
+private class Foreground(
+  val roots: List<AccessibilityNodeInfo>,
+  val system: Boolean,
+  val title: String?,
+) {
+  val root get() = roots.first()
+}
 
 class MaliuAccessibilityService : AccessibilityService() {
   companion object {
@@ -87,8 +94,6 @@ class MaliuAccessibilityService : AccessibilityService() {
   // Refs look like "s<generation>-<index>", so any new snapshot invalidates older refs.
   private var generation = 0
   private var handles = emptyList<AccessibilityNodeInfo>()
-  // Last window class per package, reported as the activity. Written on the main thread.
-  private val activities = ConcurrentHashMap<String, String>()
   private val labels = mutableMapOf<String, String?>()
   private var apps: List<LaunchableApp>? = null
   @Volatile
@@ -96,6 +101,8 @@ class MaliuAccessibilityService : AccessibilityService() {
   // Actions in the current task; zero means no task notification is showing.
   private var steps = 0
   private var lastActionAt = 0L
+  // The current action fell back to a swipe, which reports success whether or not it moved.
+  private var swiped = false
   // Set by Stop in the notification; an action waiting for its turn does not run.
   @Volatile
   private var stopRequested = false
@@ -113,9 +120,8 @@ class MaliuAccessibilityService : AccessibilityService() {
     // MaLiu's own status line says nothing about the target app. System UI redraws its bars
     // all the time, so only its new windows (a dialog) count as a change.
     if (name == packageName) return
-    val opened = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-    if (name == SYSTEM_UI && !opened) return
-    if (opened) event.className?.toString()?.let { activities[name] = it }
+    if (name == SYSTEM_UI && event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+      return
     lastChangeAt = SystemClock.uptimeMillis()
   }
 
@@ -145,9 +151,9 @@ class MaliuAccessibilityService : AccessibilityService() {
     val tag = "s${++generation}"
     // MaLiu's own chat is not a target: tapping it would send messages to the agent itself.
     if (name == packageName) {
-      recycle(root)
+      foreground.roots.forEach(::recycle)
       return screen(
-        name, false, emptyList(), false,
+        name, foreground, emptyList(), false,
         "MaLiu is on screen, so there is nothing to act on. Use app_open to open the app the task needs.",
       )
     }
@@ -159,9 +165,9 @@ class MaliuAccessibilityService : AccessibilityService() {
     var characters = 0
     var truncated = false
     var visited = 0
-    // Depth first, so reading order matches what the user sees.
+    // Depth first, so reading order matches what the user sees; the topmost window first.
     val stack = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
-    stack.addLast(root to 0)
+    foreground.roots.asReversed().forEach { stack.addLast(it to 0) }
     while (stack.isNotEmpty() && kept.size < MAX_NODES && visited < MAX_VISITED) {
       val (node, depth) = stack.removeLast()
       visited++
@@ -181,6 +187,12 @@ class MaliuAccessibilityService : AccessibilityService() {
         continue
       }
       val row = rows.lastOrNull()?.first
+      // A field's hint is often drawn as its own text right after it; it is already the name.
+      val repeated = element["role"] == "text" && elements.lastOrNull()?.get("name") == element["name"]
+      if (repeated) {
+        recycle(node)
+        continue
+      }
       if (row != null && element["role"] == "text") {
         val before = row["name"] as String?
         val after = listOfNotNull(before, element["name"] as String).joinToString(" ").take(MAX_NAME)
@@ -205,7 +217,7 @@ class MaliuAccessibilityService : AccessibilityService() {
     stack.forEach { recycle(it.first) }
     handles = kept
     return screen(
-      name, foreground.system, elements, truncated,
+      name, foreground, elements, truncated,
       if (foreground.system)
         "A system dialog is in front of the app. Ask the user before granting a permission or consent. Refs are valid only for this snapshot."
       else "Refs are valid only for this snapshot. If the screen is still loading, take another snapshot.",
@@ -231,6 +243,7 @@ class MaliuAccessibilityService : AccessibilityService() {
     // and finishTask must still bring MaLiu back.
     steps++
     watchChanges(true)
+    swiped = false
     try {
       action()
       val start = SystemClock.uptimeMillis()
@@ -242,6 +255,11 @@ class MaliuAccessibilityService : AccessibilityService() {
     } finally {
       watchChanges(false)
     }
+    // A swipe always "succeeds"; only the screen says whether anything moved.
+    if (swiped && lastChangeAt < lastActionAt)
+      throw IllegalStateException(
+        "Nothing moved: this part of the screen is at its end or does not scroll that way.",
+      )
     val result = snapshot()
     TaskNotification.show(this, result["app"] as String?, steps)
     return result
@@ -257,10 +275,7 @@ class MaliuAccessibilityService : AccessibilityService() {
     lastActionAt = 0
     if (steps == 0) return
     steps = 0
-    val front = foregroundRoot(prefetch = false)
-    val showing = front?.packageName?.toString() == packageName
-    front?.let(::recycle)
-    if (showing) return
+    if (frontPackage() == packageName) return
     startActivity(
       packageManager.getLaunchIntentForPackage(packageName)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
     )
@@ -274,8 +289,9 @@ class MaliuAccessibilityService : AccessibilityService() {
       ?: throw IllegalStateException("${app.label} cannot be opened from MaLiu.")
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return act {
+      val before = frontPackage()
       startActivity(intent)
-      waitForPackage(app)
+      waitForLaunch(app, before)
     }
   }
 
@@ -306,7 +322,9 @@ class MaliuAccessibilityService : AccessibilityService() {
       putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
     }
     if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args))
-      throw IllegalStateException("The field did not accept text. Take a new snapshot.")
+      throw IllegalStateException(
+        "The field did not accept text. Many search bars only open a search screen: tap it with app_click, then fill the field on the new screen.",
+      )
   }
 
   // direction names where the content moves into view: "down" shows what is below.
@@ -321,14 +339,14 @@ class MaliuAccessibilityService : AccessibilityService() {
     }
     if (scroller != null && onAxis(scroller, direction)) {
       val action = scrollAction(scroller, direction)
-      if (action == null || !scroller.performAction(action))
-        throw IllegalStateException("The list is already at its end.")
-      return
+      if (action != null && scroller.performAction(action)) return
     }
-    // Flutter, games and custom views often draw lists without reporting them as
-    // scrollable; a swipe moves them the way a finger does.
+    // Flutter, games and custom views often draw lists without reporting them, and some
+    // gestures have no action at all, such as swiping up from a launcher to open its app
+    // list. A swipe moves them the way a finger does; act() reports if nothing moved.
     val area = (scroller ?: start)?.let(::bounds) ?: screenBounds()
     swipe(area, direction)
+    swiped = true
   }
 
   fun press(key: String) {
@@ -363,15 +381,17 @@ class MaliuAccessibilityService : AccessibilityService() {
 
   private fun screen(
     name: String?,
-    system: Boolean,
+    foreground: Foreground?,
     elements: List<Map<String, Any?>>,
     truncated: Boolean,
     note: String,
   ): Map<String, Any?> = mapOf(
     "package" to name,
+    // Apps without a launcher icon, such as a settings search page, are hidden from
+    // MaLiu by package visibility; their window title still says where the user is.
     "app" to name?.let(::label),
-    "activity" to name?.let { activities[it] },
-    "window" to if (system) "system" else "app",
+    "title" to foreground?.title,
+    "window" to if (foreground?.system == true) "system" else "app",
     "elements" to elements,
     "truncated" to truncated,
     "note" to note,
@@ -383,13 +403,18 @@ class MaliuAccessibilityService : AccessibilityService() {
     serviceInfo = info
   }
 
-  private fun waitForPackage(app: LaunchableApp) {
+  private fun frontPackage(): String? {
+    val root = foregroundRoot(prefetch = false) ?: return null
+    return root.packageName?.toString().also { recycle(root) }
+  }
+
+  // An app may resume on a screen owned by another package, such as Settings reopening on
+  // its search page, so any change of front app counts as launched.
+  private fun waitForLaunch(app: LaunchableApp, before: String?) {
     val start = SystemClock.uptimeMillis()
     while (SystemClock.uptimeMillis() - start < LAUNCH_MAX_MS) {
-      val root = foregroundRoot(prefetch = false)
-      val current = root?.packageName?.toString()
-      root?.let(::recycle)
-      if (current == app.packageName) return
+      val current = frontPackage()
+      if (current == app.packageName || (current != null && current != before)) return
       Thread.sleep(100)
     }
     throw IllegalStateException(
@@ -431,25 +456,46 @@ class MaliuAccessibilityService : AccessibilityService() {
   private fun normalize(value: String): String =
     value.lowercase(Locale.ROOT).replace(Regex("\\s+"), "")
 
-  // The topmost window the user would act on: an app window, or a focused system dialog
-  // such as a screen-recording or USB prompt. Bars and the shade are system windows too,
-  // but they do not hold focus while an app is in use. Prefetching only pays off for a
-  // full walk, not for a check of which app is in front.
-  private fun foreground(prefetch: Boolean = true): Foreground? {
+  // The windows the user would act on, topmost first. A focused system dialog, such as a
+  // permission or screen-recording prompt, stands alone. Otherwise the app in front: a
+  // modal dialog holds focus and stands alone too, while a popup that does not take focus
+  // leaves the activity below it usable, so both are read. Bars and the shade are system
+  // windows but never hold focus while an app is in use.
+  // whole = false reads only the topmost window, enough to tell which app is in front.
+  // Prefetching only pays off for a full walk.
+  private fun foreground(prefetch: Boolean = true, whole: Boolean = true): Foreground? {
     val batch = prefetch && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    for (window in windows) {
-      val system = window.type == AccessibilityWindowInfo.TYPE_SYSTEM
-      if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION && !(system && window.isFocused))
-        continue
-      val root = (if (batch) window.getRoot(PREFETCH) else window.root) ?: continue
-      return Foreground(root, system)
+    val rootOf = { window: AccessibilityWindowInfo ->
+      if (batch) window.getRoot(PREFETCH) else window.root
     }
-    val root = (if (batch) getRootInActiveWindow(PREFETCH) else rootInActiveWindow) ?: return null
-    return Foreground(root, false)
+    val all = windows
+    all.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_SYSTEM && it.isFocused }?.let { window ->
+      rootOf(window)?.let { return Foreground(listOf(it), true, window.title?.toString()) }
+    }
+    val apps = all.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+    val top = apps.firstNotNullOfOrNull { window -> rootOf(window)?.let { window to it } }
+    if (top == null) {
+      val root = (if (batch) getRootInActiveWindow(PREFETCH) else rootInActiveWindow) ?: return null
+      return Foreground(listOf(root), false, null)
+    }
+    val (window, root) = top
+    val roots = mutableListOf(root)
+    if (whole && !window.isFocused) {
+      for (below in apps.subList(apps.indexOf(window) + 1, apps.size)) {
+        val other = rootOf(below) ?: continue
+        if (other.packageName != root.packageName) {
+          recycle(other)
+          continue
+        }
+        roots.add(other)
+        if (below.isFocused) break
+      }
+    }
+    return Foreground(roots, false, window.title?.toString())
   }
 
   private fun foregroundRoot(prefetch: Boolean = true): AccessibilityNodeInfo? =
-    foreground(prefetch)?.root
+    foreground(prefetch, whole = false)?.root
 
   // Android 13 can fetch a batch of descendants per call; the walk then reads from cache.
   private fun child(node: AccessibilityNodeInfo, index: Int): AccessibilityNodeInfo? =

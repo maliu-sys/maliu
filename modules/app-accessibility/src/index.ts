@@ -13,7 +13,8 @@ export type ScreenElement = {
 export type ScreenSnapshot = {
   package: string | null;
   app: string | null;
-  activity: string | null;
+  // The window title the system shows, such as the screen or dialog name.
+  title: string | null;
   // 'system' for a system dialog in front of the app, such as a consent prompt.
   window: 'app' | 'system';
   elements: ScreenElement[];

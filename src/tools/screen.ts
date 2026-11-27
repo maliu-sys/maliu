@@ -21,7 +21,8 @@ const fields: Record<Field, Record<string, unknown>> = {
   direction: {
     type: 'string',
     enum: ['up', 'down', 'left', 'right'],
-    description: 'Where the content to reveal is: down shows what is below.',
+    description:
+      'Which content to bring into view, not which way the finger moves. down shows what is below (the finger moves up; on a home screen it opens the app list). up shows what is above (the finger moves down; at the top of a home screen it pulls down notifications).',
   },
   key: {
     type: 'string',
@@ -116,7 +117,7 @@ For websites, prefer the browser tools.`,
   ),
   tool(
     'app_snapshot',
-    `Read the app on screen: package, app name, activity and visible elements with refs.
+    `Read the app on screen: package, app name, window title and visible elements with refs.
 Unnamed rows are named by the text inside them. Password fields read [redacted]; ask the user to type those.
 window is "system" when a system dialog is in front; ask the user before granting a permission or consent there.`,
     [],
@@ -146,7 +147,8 @@ window is "system" when a system dialog is in front; ask the user before grantin
   tool(
     'app_scroll',
     `Scroll by about a screen and return the new screen. Without a ref, scrolls the main list along that direction; with a ref, the list containing that element.
-Left and right move carousels and pages. Lists that do not report scrolling are swiped like a finger.`,
+Left and right move carousels and pages. Where there is no list to scroll, the screen is swiped like a finger.
+An error says when nothing moved; then try another direction or another way instead of repeating.`,
     ['direction', 'ref'],
     ['direction'],
     (values) => ({
