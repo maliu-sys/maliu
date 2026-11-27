@@ -28,6 +28,9 @@ import { HistoryScreen } from './HistoryScreen';
 import { ToolsScreen } from './ToolsScreen';
 import { BrowserScreen } from './BrowserScreen';
 import { BrowserController } from '../browser/controller';
+import { ScreenController } from '../device/screen';
+import { useScreenAccess } from '../device/use-screen-access';
+import { useScreenAccessPrompt } from '../device/screen-prompt';
 import { useTheme } from '../components/theme';
 
 export function MainScreen({
@@ -39,6 +42,10 @@ export function MainScreen({
 }) {
   const theme = useTheme();
   const [browser] = useState(() => new BrowserController());
+  const [screenAccess] = useState(() => new ScreenController());
+  const access = useScreenAccess(screenAccess);
+  // A refused tool call is the moment the ask makes sense, so the banner waits for it.
+  const accessPrompt = useScreenAccessPrompt();
   const [settings, setSettings] = useState(initialSettings);
   const [screen, setScreen] = useState<Screen>('chat');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -78,18 +85,27 @@ export function MainScreen({
   };
   useEffect(() => {
     const listener = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' && controller.current) {
+      // Operating another app puts MaLiu in the background by design.
+      if (
+        state !== 'active' &&
+        controller.current &&
+        !screenAccess.actingInOtherApps
+      ) {
         controller.current.abort(
           new Error('Stopped because the app moved to the background.'),
         );
       }
     });
+    const stopListener = screenAccess.onStop(() =>
+      controller.current?.abort(new Error('Stopped from the notification.')),
+    );
     return () => {
       listener.remove();
+      stopListener();
       controller.current?.abort(new Error('Stopped.'));
       if (timer.current) clearTimeout(timer.current);
     };
-  }, []);
+  }, [screenAccess]);
 
   useEffect(() => {
     if (screen === 'chat') return;
@@ -114,6 +130,7 @@ export function MainScreen({
         synthetic,
         settings,
         browser,
+        screen: screenAccess,
         signal: run.signal,
         onMessages: publish,
         onStatus: setStatus,
@@ -136,6 +153,10 @@ export function MainScreen({
       flush(); // update the screen
       controller.current = null; // delete the controller
       setBusy(false);
+      // Bring MaLiu back from the app it worked in, so the answer is on screen.
+      void screenAccess
+        .finish()
+        .catch((e: unknown) => setError(errorMessage(e)));
     }
   };
   const showConversation = (next: Conversation) => {
@@ -190,6 +211,7 @@ export function MainScreen({
       content = (
         <SettingsScreen
           settings={settings}
+          access={access}
           onMenu={openMenu}
           onBack={backToChat}
           onSaved={(next) => {
@@ -281,6 +303,8 @@ export function MainScreen({
           key={conversationId}
           messages={messages}
           model={settings.model}
+          access={access}
+          accessPrompt={accessPrompt}
           enabled={!!settings.apiKey && !!settings.model}
           busy={busy}
           status={status}

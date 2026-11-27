@@ -13,14 +13,17 @@ import { completionUrl } from '../model/openai-compatible';
 import { saveSettings } from '../storage/settings';
 import { useTheme } from '../components/theme';
 import { ScreenHeader } from '../components/ScreenHeader';
+import type { ScreenAccess } from '../device/use-screen-access';
 
 export function SettingsScreen({
   settings,
+  access,
   onSaved,
   onBack,
   onMenu,
 }: {
   settings: ModelSettings;
+  access: ScreenAccess;
   onSaved: (settings: ModelSettings) => void;
   onBack: () => void;
   onMenu: () => void;
@@ -131,6 +134,33 @@ export function SettingsScreen({
             {busy ? 'Saving…' : 'Save settings'}
           </Text>
         </Pressable>
+        <View
+          style={[styles.field, styles.divider, { borderColor: theme.border }]}
+        >
+          <Text style={{ color: theme.text, fontWeight: '700', fontSize: 18 }}>
+            App control
+          </Text>
+          <Text style={{ color: theme.muted, lineHeight: 22 }}>
+            With Android screen access, MaLiu can read and tap the app on screen
+            while you ask it to do something. It takes one screen at a time,
+            only during a task, and never in the background. Password fields
+            stay hidden.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={access.request}
+            style={[styles.save, { backgroundColor: theme.accent }]}
+          >
+            <Text style={{ color: theme.background, fontWeight: '700' }}>
+              {access.enabled ? 'Android settings' : 'Turn on in Android'}
+            </Text>
+          </Pressable>
+          <Text style={[styles.note, { color: theme.muted }]}>
+            {access.enabled
+              ? 'On. Android shows the switch; turn it off there any time.'
+              : 'Off. Android asks you to confirm the switch.'}
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -142,4 +172,5 @@ const styles = StyleSheet.create({
   input: { padding: 14, borderWidth: 1, borderRadius: 12, fontSize: 16 },
   note: { fontSize: 13, lineHeight: 20 },
   save: { padding: 16, borderRadius: 12, alignItems: 'center' },
+  divider: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 20 },
 });
