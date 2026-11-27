@@ -1,5 +1,12 @@
-import { memo, useMemo, useRef } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { memo, useEffect, useMemo, useRef } from 'react';
+import {
+  AppState,
+  FlatList,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+} from 'react-native';
 import type { Message } from '../agent/types';
 import { ToolCallCard } from './ToolCallCard';
 import { useTheme } from './theme';
@@ -55,7 +62,30 @@ const MessageRow = memo(
 export function MessageList({ messages }: { messages: Message[] }) {
   const theme = useTheme();
   const list = useRef<FlatList<Message>>(null);
+  // Only the user's own scrolling decides whether to follow new messages. Layout passes
+  // while MaLiu is in the background, as when it works in another app, also report
+  // scroll offsets and must not stop the list from following.
   const nearBottom = useRef(true);
+  const followFrom = (e: NativeScrollEvent) => {
+    nearBottom.current =
+      e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y <
+      100;
+  };
+  // FlatList.scrollToEnd estimates the last cell until it is measured and stops short;
+  // the measured content height is exact, and the scroll view clamps it to the end.
+  const contentHeight = useRef(0);
+  const toEnd = () =>
+    list.current?.scrollToOffset({
+      offset: contentHeight.current,
+      animated: false,
+    });
+  // Content that grew in the background is shown from its end once MaLiu is back.
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && nearBottom.current) toEnd();
+    });
+    return () => listener.remove();
+  }, []);
   const visible = useMemo(
     () => messages.filter((m) => m.role !== 'tool'),
     [messages],
@@ -78,16 +108,11 @@ export function MessageList({ messages }: { messages: Message[] }) {
       extraData={results}
       contentContainerStyle={styles.list}
       keyboardShouldPersistTaps="handled"
-      onScroll={({ nativeEvent: e }) => {
-        nearBottom.current =
-          e.contentSize.height -
-            e.layoutMeasurement.height -
-            e.contentOffset.y <
-          100;
-      }}
-      scrollEventThrottle={100}
-      onContentSizeChange={() => {
-        if (nearBottom.current) list.current?.scrollToEnd({ animated: false });
+      onScrollEndDrag={({ nativeEvent }) => followFrom(nativeEvent)}
+      onMomentumScrollEnd={({ nativeEvent }) => followFrom(nativeEvent)}
+      onContentSizeChange={(_width, height) => {
+        contentHeight.current = height;
+        if (nearBottom.current) toEnd();
       }}
       ListEmptyComponent={
         <View style={styles.empty}>
