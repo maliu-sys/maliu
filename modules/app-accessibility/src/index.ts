@@ -39,7 +39,7 @@ type Native = {
   ): Promise<ScreenSnapshot>;
   press(key: ScreenKey): Promise<ScreenSnapshot>;
   finishTask(): Promise<void>;
-  // Stop was pressed in the task notification.
+  // Stop was pressed in the task notification or on-screen label.
   addListener(event: 'onStop', listener: () => void): { remove(): void };
 };
 

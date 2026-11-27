@@ -48,13 +48,17 @@ object TaskNotification {
     context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
   }
 
-  private fun activity(context: Context, code: Int, action: String?): PendingIntent {
+  // Opens MaLiu; with ACTION_STOP_TASK it also stops the running task.
+  fun intent(context: Context, action: String?): Intent {
     val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)!!
     val intent = Intent(launch).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     if (action != null) intent.setAction(action).component = launch.component
-    return PendingIntent.getActivity(
-      context, code, intent,
+    return intent
+  }
+
+  private fun activity(context: Context, code: Int, action: String?): PendingIntent =
+    PendingIntent.getActivity(
+      context, code, intent(context, action),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-  }
 }

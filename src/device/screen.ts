@@ -86,7 +86,7 @@ export class ScreenController {
     await appAccessibility().finishTask();
   }
 
-  // Subscribes to Stop in the task notification. Returns an unsubscribe function.
+  // Subscribes to Stop in the task notification or on-screen label. Returns an unsubscribe function.
   onStop(listener: () => void): () => void {
     let subscription: { remove(): void };
     try {

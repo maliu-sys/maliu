@@ -97,7 +97,7 @@ export function MainScreen({
       }
     });
     const stopListener = screenAccess.onStop(() =>
-      controller.current?.abort(new Error('Stopped from the notification.')),
+      controller.current?.abort(new Error('You stopped the task.')),
     );
     return () => {
       listener.remove();

@@ -10,7 +10,7 @@ class AppAccessibilityModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("MaliuAppAccessibility")
 
-    // Stop in the task notification opens MaLiu with this action; the agent run is aborted.
+    // Stop in the task notification or on-screen label opens MaLiu with this action; the agent run is aborted.
     Events("onStop")
 
     OnNewIntent { intent ->

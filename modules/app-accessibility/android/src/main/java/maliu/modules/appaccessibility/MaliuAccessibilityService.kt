@@ -111,6 +111,19 @@ class MaliuAccessibilityService : AccessibilityService() {
     stopRequested = true
   }
 
+  private val overlay by lazy { TaskOverlay(this) }
+
+  // Stop on the overlay label works like Stop in the notification.
+  private fun stopFromOverlay() {
+    requestStop()
+    startActivity(TaskNotification.intent(this, ACTION_STOP_TASK))
+  }
+
+  private fun showTouch(node: AccessibilityNodeInfo) {
+    val box = Rect().also(node::getBoundsInScreen)
+    if (!box.isEmpty) overlay.touch(box.exactCenterX(), box.exactCenterY())
+  }
+
   override fun onServiceConnected() {
     active = this
   }
@@ -129,12 +142,14 @@ class MaliuAccessibilityService : AccessibilityService() {
 
   override fun onUnbind(intent: Intent?): Boolean {
     if (active === this) active = null
+    overlay.hide()
     release()
     return super.onUnbind(intent)
   }
 
   override fun onDestroy() {
     if (active === this) active = null
+    overlay.hide()
     release()
     super.onDestroy()
   }
@@ -242,6 +257,7 @@ class MaliuAccessibilityService : AccessibilityService() {
     // Counted before the action: even a failed launch may have left another app in front,
     // and finishTask must still bring MaLiu back.
     steps++
+    overlay.show(steps, ::stopFromOverlay)
     watchChanges(true)
     swiped = false
     try {
@@ -270,6 +286,7 @@ class MaliuAccessibilityService : AccessibilityService() {
   @Synchronized
   fun finishTask() {
     TaskNotification.cancel(this)
+    overlay.hide()
     // Runs after any action in flight, which holds the lock, so Stop has reached it.
     stopRequested = false
     lastActionAt = 0
@@ -298,6 +315,7 @@ class MaliuAccessibilityService : AccessibilityService() {
   fun click(ref: String) {
     val node = ancestor(target(ref)) { it.isClickable || it.isEditable }
       ?: throw IllegalStateException("This element cannot be tapped. Take a new snapshot.")
+    showTouch(node)
     if (!node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) press(bounds(node), 60)
   }
 
@@ -305,6 +323,7 @@ class MaliuAccessibilityService : AccessibilityService() {
   // get a finger held at their centre.
   fun longPress(ref: String) {
     val node = target(ref)
+    showTouch(node)
     val holder = ancestor(node) { it.isLongClickable }
     if (holder?.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK) == true) return
     press(bounds(node), LONG_PRESS_MS)
@@ -316,6 +335,7 @@ class MaliuAccessibilityService : AccessibilityService() {
       throw IllegalStateException("This element is not a text field. Take a new snapshot.")
     if (node.isPassword)
       throw IllegalStateException("This is a password field. Ask the user to type it themselves.")
+    showTouch(node)
     // Focus first, so a following Enter reaches this field.
     if (!node.isFocused) node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
     val args = Bundle().apply {
@@ -339,12 +359,14 @@ class MaliuAccessibilityService : AccessibilityService() {
     }
     if (scroller != null && onAxis(scroller, direction)) {
       val action = scrollAction(scroller, direction)
+      if (action != null) showTouch(scroller)
       if (action != null && scroller.performAction(action)) return
     }
     // Flutter, games and custom views often draw lists without reporting them, and some
     // gestures have no action at all, such as swiping up from a launcher to open its app
     // list. A swipe moves them the way a finger does; act() reports if nothing moved.
     val area = (scroller ?: start)?.let(::bounds) ?: screenBounds()
+    overlay.touch(area.exactCenterX(), area.exactCenterY())
     swipe(area, direction)
     swiped = true
   }
