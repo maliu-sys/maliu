@@ -325,10 +325,40 @@ export const agent = [
       process.env.TZ = 'America/St_Johns';
       const west = buildSystemPrompt(instant);
       ctx.check(
-        'prompt uses the local date and UTC offset',
-        east.includes('2026-11-27 07:30 (UTC+08:00)') &&
-          west.includes('2026-11-26 20:00 (UTC-03:30)'),
+        'system prompt states the UTC offset and stays stable within a zone',
+        east.includes('UTC+08:00') &&
+          west.includes('UTC-03:30') &&
+          buildSystemPrompt(new Date(instant.getTime() + 3_600_000)) === west,
         { east, west },
+      );
+      process.env.TZ = 'Asia/Shanghai';
+      const input = {
+        id: 'timed',
+        createdAt: instant.getTime(),
+        role: 'user',
+        content: 'Remind me tomorrow.',
+      };
+      let seen;
+      await runAgent({
+        history: [],
+        input,
+        env: { conversationId: 'time', userMessage: input },
+        settings: ctx.settings,
+        tools: [],
+        systemPrompt: 'Test time.',
+        signal: ctx.signal,
+        complete: scripted(({ messages }) => {
+          seen = messages[0].content;
+          return reply('OK.');
+        }),
+        onMessages: () => {},
+        onStatus: () => {},
+        checkpoint: async () => {},
+      });
+      ctx.check(
+        'the model sees each user message with its local send time',
+        seen === '[2026-11-27 07:30] Remind me tomorrow.',
+        { seen },
       );
     },
   },

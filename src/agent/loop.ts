@@ -9,6 +9,7 @@ import {
   type ModelCall,
 } from './types';
 import { throwIfAborted, withTimeout } from './timeout';
+import { localTime } from './prompt';
 
 // Close outstanding calls after an interrupted run; never replay a device action.
 export function closePendingTools(
@@ -69,6 +70,18 @@ export function withoutStaleState(
   );
 }
 
+// Send times come from stored messages, so earlier requests keep a cacheable prefix.
+function withSendTimes(messages: Message[]): Message[] {
+  return messages.map((message) =>
+    message.role === 'user' && message.createdAt
+      ? {
+          ...message,
+          content: `[${localTime(new Date(message.createdAt))}] ${message.content}`,
+        }
+      : message,
+  );
+}
+
 const finalTurnNote = `This is the last step for this request, so tools are disabled.
 Summarize what was done and what remains; the user can send a message to continue.`;
 
@@ -124,7 +137,7 @@ export async function runAgent({
       const answer = await withTimeout(signal, 120_000, (requestSignal) =>
         complete({
           settings,
-          messages: withoutStaleState(messages, tools),
+          messages: withSendTimes(withoutStaleState(messages, tools)),
           tools,
           toolChoice: lastTurn ? 'none' : undefined,
           systemPrompt: lastTurn

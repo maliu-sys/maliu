@@ -448,7 +448,7 @@ export const browser = [
         complete: scripted(({ messages }) => {
           assert.ok(
             messages.some((message) =>
-              message.content.startsWith('Complete this browser task.'),
+              message.content.includes('] Complete this browser task.'),
             ),
           );
           return call('browser_snapshot', {}, 'call-3');
