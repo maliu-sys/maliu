@@ -137,7 +137,21 @@ export async function runAgent({
       const answer = await withTimeout(signal, 120_000, (requestSignal) =>
         complete({
           settings,
-          messages: withSendTimes(withoutStaleState(messages, tools)),
+          // Sent, never stored: on the last turn DeepSeek ignores tool_choice "none" about
+          // half the time when the note is only in the system prompt, and writes its tool
+          // call markup as the answer. The same note as the latest message is followed.
+          messages: [
+            ...withSendTimes(withoutStaleState(messages, tools)),
+            ...(lastTurn
+              ? [
+                  {
+                    id: 'final-turn',
+                    role: 'user' as const,
+                    content: finalTurnNote,
+                  },
+                ]
+              : []),
+          ],
           tools,
           toolChoice: lastTurn ? 'none' : undefined,
           systemPrompt: lastTurn
