@@ -4,6 +4,10 @@ import { promptScreenAccess } from '../device/screen-prompt';
 
 type Field = 'app' | 'ref' | 'text' | 'direction' | 'key';
 
+// Model turns for a request that operates apps; the 40-action budget in the screen
+// controller still applies, and snapshots take turns without acting.
+const APP_TASK_TURNS = 50;
+
 const fields: Record<Field, Record<string, unknown>> = {
   app: {
     type: 'string',
@@ -74,8 +78,10 @@ function tool(
   return {
     name,
     description,
-    // Every call returns the current screen, so older results only cost tokens.
+    // Every call returns the current screen; older results are sent as short digests.
     observesState: true,
+    // Moving through an app takes about a turn per tap; 16 ended tasks halfway.
+    turns: APP_TASK_TURNS,
     parameters: {
       type: 'object',
       properties: Object.fromEntries(
