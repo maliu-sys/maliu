@@ -116,6 +116,7 @@ export const screenTools: Tool[] = [
   tool(
     'app_open',
     `Open an installed app on this phone and return its screen. Use this first: while the user chats, MaLiu itself is on screen.
+An app that is already open comes back on the screen where it was left.
 For websites, prefer the browser tools.`,
     ['app'],
     ['app'],

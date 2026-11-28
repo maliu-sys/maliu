@@ -38,6 +38,8 @@ private const val SETTLE_MAX_MS = 1_500L
 private const val POLL_MS = 30L
 // A cold start can take a few seconds before the app's first window appears.
 private const val LAUNCH_MAX_MS = 5_000L
+// A launch that changes the screen starts doing so well within this.
+private const val LAUNCH_STILL_MS = 1_000L
 // Longer than Android's 400-500 ms long-press timeout; a swipe slow enough not to fling.
 private const val LONG_PRESS_MS = 650L
 private const val SWIPE_MS = 350L
@@ -431,12 +433,16 @@ class MaliuAccessibilityService : AccessibilityService() {
   }
 
   // An app may resume on a screen owned by another package, such as Settings reopening on
-  // its search page, so any change of front app counts as launched.
+  // its search page, so any change of front app counts as launched. When that app was
+  // already in front, launching it changes nothing; if MaLiu was not in front and the
+  // screen stays still, the returned snapshot shows what is there.
   private fun waitForLaunch(app: LaunchableApp, before: String?) {
     val start = SystemClock.uptimeMillis()
     while (SystemClock.uptimeMillis() - start < LAUNCH_MAX_MS) {
       val current = frontPackage()
       if (current == app.packageName || (current != null && current != before)) return
+      val still = lastChangeAt < start && SystemClock.uptimeMillis() - start >= LAUNCH_STILL_MS
+      if (before != packageName && current == before && still) return
       Thread.sleep(100)
     }
     throw IllegalStateException(
