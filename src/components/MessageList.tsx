@@ -22,6 +22,12 @@ const MessageRow = memo(
   }) {
     const theme = useTheme();
     const user = message.role === 'user';
+    if (message.summary)
+      return (
+        <Text style={[styles.note, { color: theme.muted }]}>
+          Earlier messages above are summarized for MaLiu to save space.
+        </Text>
+      );
     if (message.synthetic)
       return (
         <Text style={[styles.note, { color: theme.muted }]}>

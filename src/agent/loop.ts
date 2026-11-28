@@ -10,6 +10,7 @@ import {
 } from './types';
 import { throwIfAborted, withTimeout } from './timeout';
 import { localTime } from './prompt';
+import { forModel } from './compact';
 
 // Close outstanding calls after an interrupted run; never replay a device action.
 export function closePendingTools(
@@ -43,31 +44,6 @@ export function closePendingTools(
         })),
     ];
   });
-}
-
-// Only the latest successful state observation is current; older ones only cost tokens.
-export function withoutStaleState(
-  messages: Message[],
-  tools: Tool[],
-): Message[] {
-  const observers = new Set(
-    tools.filter((tool) => tool.observesState).map((tool) => tool.name),
-  );
-  const isObservation = (message: Message) =>
-    message.role === 'tool' &&
-    !message.isError &&
-    observers.has(message.toolName ?? '');
-  const latest = messages.findLastIndex(isObservation);
-  return messages.map((message, index) =>
-    index < latest && isObservation(message)
-      ? {
-          ...message,
-          content: JSON.stringify({
-            omitted: 'Outdated state. A later result shows the current state.',
-          }),
-        }
-      : message,
-  );
 }
 
 // Send times come from stored messages, so earlier requests keep a cacheable prefix.
@@ -128,9 +104,11 @@ export async function runAgent({
   };
   try {
     await publish();
-    for (let turn = 0; turn < maxTurns; turn++) {
+    // Grows when a tool that needs many steps is used, such as operating an app.
+    let turns = maxTurns;
+    for (let turn = 0; turn < turns; turn++) {
       // call the model API
-      const lastTurn = turn === maxTurns - 1;
+      const lastTurn = turn === turns - 1;
       onStatus('Thinking…');
       const draftId = newId();
       const createdAt = Date.now();
@@ -141,7 +119,7 @@ export async function runAgent({
           // half the time when the note is only in the system prompt, and writes its tool
           // call markup as the answer. The same note as the latest message is followed.
           messages: [
-            ...withSendTimes(withoutStaleState(messages, tools)),
+            ...withSendTimes(forModel(messages, tools)),
             ...(lastTurn
               ? [
                   {
@@ -194,6 +172,7 @@ export async function runAgent({
         try {
           const tool = tools.find((item) => item.name === call.function.name);
           if (!tool) throw new Error(`Unknown tool: ${call.function.name}`);
+          turns = Math.max(turns, tool.turns ?? 0);
           const args: unknown = JSON.parse(call.function.arguments);
           if (!args || typeof args !== 'object' || Array.isArray(args))
             throw new Error('Tool arguments must be a JSON object.');
@@ -234,7 +213,7 @@ export async function runAgent({
     }
     // Reached only when a provider ignores tool_choice on the last turn.
     throw new Error(
-      `Stopped after ${maxTurns} model turns. Send a message to continue.`,
+      `Stopped after ${turns} model turns. Send a message to continue.`,
     );
   } catch (error) {
     if (draft?.content) messages = [...messages, draft];

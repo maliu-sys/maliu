@@ -225,7 +225,13 @@ export const agent = [
             description: '',
             parameters: {},
             observesState: true,
-            execute: async () => ({ page: ++observations }),
+            execute: async () => {
+              const page = ++observations;
+              return {
+                title: `Page ${page}`,
+                elements: [{ ref: `s${page}-1`, role: 'button', name: 'Next' }],
+              };
+            },
           },
           {
             name: 'lookup',
@@ -242,18 +248,33 @@ export const agent = [
             const results = messages
               .filter((m) => m.role === 'tool')
               .map((m) => JSON.parse(m.content));
-            assert.ok(results[0].omitted);
-            assert.deepEqual(results.slice(1), [{ text: 'kept' }, { page: 2 }]);
+            assert.deepEqual(results[0].earlier, { title: 'Page 1' });
+            assert.deepEqual(results[0].showed, ['button Next']);
+            assert.ok(
+              !messages
+                .find((m) => m.tool_call_id === 'call-1')
+                .content.includes('s1-1'),
+            );
+            assert.deepEqual(results.slice(1), [
+              { text: 'kept' },
+              {
+                title: 'Page 2',
+                elements: [{ ref: 's2-1', role: 'button', name: 'Next' }],
+              },
+            ]);
             return reply('Done.');
           },
         ),
       });
-      ctx.check('the model sees only the latest state observation', true);
+      ctx.check(
+        'the model sees older state observations as digests without refs',
+        true,
+      );
       ctx.check(
         'stored history keeps every observation',
         conversation.messages
           .filter((m) => m.toolName === 'observe')
-          .every((m) => !JSON.parse(m.content).omitted),
+          .every((m) => JSON.parse(m.content).elements[0].ref),
       );
     },
   },

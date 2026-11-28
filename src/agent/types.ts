@@ -19,6 +19,9 @@ export type Message = {
   isError?: boolean;
   // A user-role message written by the app, such as resuming after a browser handoff.
   synthetic?: true;
+  // A summary the model wrote of the messages up to and including `through`. It is
+  // stored where it was made and sent in the system prompt instead of those messages.
+  summary?: { through: string };
 };
 
 // some tools need environment information in addition to tool arguments.
@@ -38,8 +41,10 @@ export type Tool = {
   description: string;
   parameters: Record<string, unknown>;
   pausesAgent?: boolean;
-  // Results describe the current state; only the latest one is sent to the model.
+  // Results describe the current state; only the latest one is sent in full.
   observesState?: boolean;
+  // A request that uses this tool may take this many model turns instead of the default.
+  turns?: number;
   execute: (
     args: Record<string, unknown>,
     signal: AbortSignal,
