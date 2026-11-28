@@ -59,7 +59,7 @@ function withSendTimes(messages: Message[]): Message[] {
 }
 
 // Give the summary evidence without replaying the tool protocol.
-function summaryHistory(messages: Message[]): Message[] {
+function summaryToolHistory(messages: Message[]): Message[] {
   return messages.flatMap((message): Message[] => {
     if (message.role === 'user') return [message];
     const { id, content, toolName, isError } = message;
@@ -148,7 +148,7 @@ export async function runAgent({
           // DeepSeek follows the summary note more reliably as the latest message.
           messages: lastTurn
             ? [
-                ...summaryHistory(context),
+                ...summaryToolHistory(context),
                 { id: 'final-turn', role: 'user', content: finalTurnNote },
               ]
             : context,
